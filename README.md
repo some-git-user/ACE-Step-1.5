@@ -24,6 +24,7 @@
 - **CPU**: AMD Ryzen 5 5600X
 - **System RAM**: 32GB
 - **Observed Think Mode Runtime**: Using `acestep-5Hz-lm-4B` with `acestep-v15-turbo`, generating a 3:30 track takes about **~5 minutes** on this hardware.
+- **Observed Non-Think Runtime**: With LM think mode disabled, generating a 3:30 track takes about **~10 seconds** on this hardware.
 
 ## Table of Contents
 
