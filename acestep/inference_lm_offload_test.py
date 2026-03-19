@@ -17,7 +17,12 @@ import torch
 import torch.nn as nn
 
 try:
-    from acestep.inference import _lm_gpu_context_enter, _lm_gpu_context_exit, format_sample
+    from acestep.inference import (
+        _lm_gpu_context_enter,
+        _lm_gpu_context_exit,
+        format_sample,
+        understand_music,
+    )
     _IMPORT_OK = True
     _IMPORT_ERROR = ""
 except Exception as exc:
@@ -26,6 +31,7 @@ except Exception as exc:
     _lm_gpu_context_enter = None  # type: ignore[assignment]
     _lm_gpu_context_exit = None   # type: ignore[assignment]
     format_sample = None  # type: ignore[assignment]
+    understand_music = None  # type: ignore[assignment]
 
 
 def _make_llm_handler(
@@ -48,7 +54,7 @@ def _make_llm_handler(
         dev.type = param_device
         param.device = dev
         fake_llm = MagicMock(spec=nn.Module)
-        fake_llm.parameters.return_value = iter([param])
+        fake_llm.parameters.side_effect = lambda: iter([param])
         handler.llm = fake_llm
     return handler
 
@@ -58,7 +64,7 @@ def _make_mutable_device_llm(initial_device: str = "cpu") -> tuple[MagicMock, Ma
     fake_llm = MagicMock(spec=nn.Module)
     param = MagicMock(spec=torch.nn.Parameter)
     param.device.type = initial_device
-    fake_llm.parameters.return_value = iter([param])
+    fake_llm.parameters.side_effect = lambda: iter([param])
 
     def _to(device):
         param.device.type = str(device).split(":")[0]
@@ -240,6 +246,41 @@ class TestFormatSampleOffloadContext(unittest.TestCase):
 
         self.assertTrue(result.success)
         fake_llm.to.assert_not_called()
+
+
+@unittest.skipIf(not _IMPORT_OK, f"inference import failed: {_IMPORT_ERROR}")
+class TestUnderstandMusicOffloadContext(unittest.TestCase):
+    """Regression tests for ``understand_music`` accelerator usage in offload mode."""
+
+    def test_understand_music_moves_llm_to_cuda_then_back_when_offload_enabled(self):
+        fake_llm, _ = _make_mutable_device_llm(initial_device="cpu")
+        handler = MagicMock()
+        handler.llm_initialized = True
+        handler.llm_backend = "pt"
+        handler.offload_to_cpu = True
+        handler.device = "cpu"
+        handler.llm = fake_llm
+        handler.understand_audio_from_codes.return_value = (
+            {
+                "caption": "analyzed caption",
+                "lyrics": "analyzed lyrics",
+                "bpm": 120,
+                "duration": 30,
+                "keyscale": "C Major",
+                "language": "en",
+                "timesignature": "4/4",
+            },
+            "ok",
+        )
+
+        with patch("torch.cuda.is_available", return_value=True):
+            result = understand_music(handler, "<|audio_code_1|>")
+
+        self.assertTrue(result.success)
+        self.assertEqual(fake_llm.to.call_count, 2)
+        fake_llm.to.assert_any_call("cuda")
+        fake_llm.to.assert_any_call("cpu")
+        self.assertEqual(handler.device, "cpu")
 
 
 if __name__ == "__main__":

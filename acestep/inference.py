@@ -989,7 +989,17 @@ def understand_music(
     if not audio_codes or not audio_codes.strip():
         audio_codes = "NO USER INPUT"
 
+    lm_moved_to_accelerator = False
     try:
+        # Keep parity with generate/format flows: in offload mode, temporarily
+        # run understand actions on accelerator when available.
+        if getattr(llm_handler, "offload_to_cpu", False):
+            lm_target_device = _resolve_lm_target_device(llm_handler)
+            lm_moved_to_accelerator = _lm_gpu_context_enter(
+                llm_handler,
+                lm_target_device,
+            )
+
         # Call LLM understanding
         metadata, status = llm_handler.understand_audio_from_codes(
             audio_codes=audio_codes,
@@ -1062,6 +1072,9 @@ def understand_music(
             success=False,
             error=str(e),
         )
+    finally:
+        if lm_moved_to_accelerator:
+            _lm_gpu_context_exit(llm_handler)
 
 
 @dataclass

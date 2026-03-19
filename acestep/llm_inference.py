@@ -66,6 +66,17 @@ def _warn_if_prerelease_python():
         )
 
 
+def _resolve_available_accelerator_device() -> str:
+    """Return best available accelerator device type for temporary LM execution."""
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
+
 class LLMHandler:
     """5Hz LM Handler for audio code generation"""
 
@@ -2362,7 +2373,23 @@ class LLMHandler:
 
         logger.debug(f"[generate_from_formatted_prompt] Backend: {self.llm_backend}, Device: {self.device}, Offload: {self.offload_to_cpu}")
 
+        original_device = self.device
         try:
+            # In offload mode the PT backend can remain pinned to CPU after a
+            # previous cycle. For non-generation entrypoints (analysis/format/
+            # create-sample) this would otherwise keep LM inference on CPU even
+            # when accelerator VRAM is available.
+            if self.llm_backend == "pt" and getattr(self, "offload_to_cpu", False):
+                configured_device = str(getattr(self, "device", "cpu")).split(":")[0]
+                if configured_device == "cpu":
+                    accel_device = _resolve_available_accelerator_device()
+                    if accel_device != "cpu":
+                        logger.debug(
+                            "[generate_from_formatted_prompt] Temporarily routing PT LM "
+                            f"to {accel_device} (offload_to_cpu=True)"
+                        )
+                        self.device = accel_device
+
             if self.llm_backend == "vllm":
                 logger.info("[generate_from_formatted_prompt] Using vLLM backend for generation")
                 output_text = self._run_vllm(
@@ -2464,6 +2491,8 @@ class LLMHandler:
             # Clear accelerator cache to release any corrupted memory
             self._clear_accelerator_cache()
             return "", f"❌ Error generating from formatted prompt: {type(e).__name__}: {e or error_detail.splitlines()[-1]}"
+        finally:
+            self.device = original_device
 
     def _generate_with_constrained_decoding(
         self,
