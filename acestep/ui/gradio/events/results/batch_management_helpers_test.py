@@ -2,7 +2,7 @@
 
 import unittest
 
-from _batch_management_test_support import load_batch_management_module
+from ._batch_management_test_support import load_batch_management_module
 
 
 class _ValueWrapper:

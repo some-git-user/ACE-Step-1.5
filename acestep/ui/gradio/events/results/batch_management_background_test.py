@@ -3,8 +3,8 @@
 import unittest
 from unittest.mock import patch
 
-from _batch_management_test_support import build_progress_result
-from _batch_management_test_support import load_batch_management_module
+from ._batch_management_test_support import build_progress_result
+from ._batch_management_test_support import load_batch_management_module
 
 
 class BatchManagementBackgroundTests(unittest.TestCase):

@@ -80,6 +80,7 @@ class TestEnforceEagerWhenFlashAttnMissing(unittest.TestCase):
                  patch("acestep.llm_inference.AutoTokenizer") as mock_tok, \
                  patch("acestep.llm_inference.get_global_gpu_config", return_value=_mock_gpu_config()), \
                  patch("acestep.llm_inference.get_gpu_memory_gb", return_value=16.0), \
+                  patch("torch.version.hip", None), \
                  patch("acestep.llm_inference.MetadataConstrainedLogitsProcessor"), \
                  patch("torch.cuda.is_available", return_value=True), \
                  patch("torch.cuda.empty_cache"), \
