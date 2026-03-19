@@ -23,6 +23,7 @@
 - **GPU**: AMD Radeon RX 6900 XT (16GB VRAM)
 - **CPU**: AMD Ryzen 5 5600X
 - **System RAM**: 32GB
+- **Observed Think Mode Runtime**: Using `acestep-5Hz-lm-4B` with `acestep-v15-turbo`, generating a 3:30 track takes about **~5 minutes** on this hardware.
 
 ## Table of Contents
 
