@@ -46,6 +46,7 @@ try:
     from .cli_args import parse_quantization_arg
     from .handler import AceStepHandler
     from .llm_inference import LLMHandler
+    from .pipeline_lm_selection import env_flag, maybe_downgrade_lm_model
     from .dataset_handler import DatasetHandler
     from .ui.gradio import create_gradio_interface
     from acestep.ui.gradio.i18n import get_i18n, available_languages_info
@@ -67,6 +68,7 @@ except ImportError:
     from acestep.cli_args import parse_quantization_arg
     from acestep.handler import AceStepHandler
     from acestep.llm_inference import LLMHandler
+    from acestep.pipeline_lm_selection import env_flag, maybe_downgrade_lm_model
     from acestep.dataset_handler import DatasetHandler
     from acestep.ui.gradio import create_gradio_interface
     from acestep.ui.gradio.i18n import get_i18n, available_languages_info
@@ -415,18 +417,26 @@ def main():
                 f"Auto-enabling CPU offload (4B LM model requires offloading on {gpu_memory_gb:.0f}GB GPU)"
             )
 
-    # Safety: on 16GB GPUs, prevent selecting LM models that are too large.
-    # Even with offloading, a 4B LM (8 GB weights + KV cache) leaves almost no
-    # headroom for DiT activations on a 16 GB card.
-    if args.lm_model_path and 0 < gpu_memory_gb < VRAM_AUTO_OFFLOAD_THRESHOLD_GB:
-        if "4B" in args.lm_model_path:
-            # Downgrade to 1.7B if available
-            fallback = args.lm_model_path.replace("4B", "1.7B")
-            print(
-                f"WARNING: 4B LM model is too large for {gpu_memory_gb:.0f}GB GPU. "
-                f"Downgrading to 1.7B variant: {fallback}"
-            )
-            args.lm_model_path = fallback
+    # Safety: on sub-threshold GPUs, prevent selecting LM models that are too large.
+    # Users can explicitly opt out via ACESTEP_ALLOW_UNSUPPORTED_LM=true.
+    allow_unsupported_lm = env_flag("ACESTEP_ALLOW_UNSUPPORTED_LM", False)
+    effective_lm_model_path = maybe_downgrade_lm_model(
+        args.lm_model_path,
+        gpu_memory_gb,
+        VRAM_AUTO_OFFLOAD_THRESHOLD_GB,
+        allow_unsupported_lm=allow_unsupported_lm,
+    )
+    if effective_lm_model_path != args.lm_model_path:
+        print(
+            f"WARNING: 4B LM model is too large for {gpu_memory_gb:.0f}GB GPU. "
+            f"Downgrading to 1.7B variant: {effective_lm_model_path}"
+        )
+        args.lm_model_path = effective_lm_model_path
+    elif allow_unsupported_lm and args.lm_model_path and "4B" in args.lm_model_path:
+        print(
+            f"WARNING: ACESTEP_ALLOW_UNSUPPORTED_LM=true set; keeping {args.lm_model_path} "
+            f"on {gpu_memory_gb:.0f}GB GPU. This may cause OOM or instability."
+        )
 
     try:
         init_params = None

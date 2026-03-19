@@ -9,7 +9,7 @@ from acestep.ui.gradio.help_content import create_help_button
 
 def _create_audio_column(n, visible=True):
     """Create a single audio sample column with all its sub-components.
-    
+
     Layout:
         Audio player
         Row: [Send To Cover] [Send To Repaint] [Save]
@@ -100,10 +100,10 @@ def create_results_section(dit_handler) -> dict:
         create_help_button("results")
         # Hidden state to store LM-generated metadata
         lm_metadata_state = gr.State(value=None)
-        
+
         # Hidden state to track if caption/metadata is from formatted source (LM/transcription)
         is_format_caption_state = gr.State(value=False)
-        
+
         # Batch management states
         current_batch_index = gr.State(value=0)
         total_batches = gr.State(value=1)
@@ -116,17 +116,21 @@ def create_results_section(dit_handler) -> dict:
             cols_1_4 = []
             for i in range(1, 5):
                 cols_1_4.append(_create_audio_column(i, visible=(i <= 2)))
-        
+
         # Row 2: samples 5-8 (initially hidden)
         with gr.Row(visible=False) as audio_row_5_8:
             cols_5_8 = []
             for i in range(5, 9):
                 cols_5_8.append(_create_audio_column(i, visible=True))
-        
+
         all_cols = cols_1_4 + cols_5_8
-        
-        status_output = gr.Textbox(label=t("results.generation_status"), interactive=False)
-        
+
+        status_output = gr.Textbox(
+            label=t("results.generation_status"),
+            interactive=False,
+            elem_id="acestep-status-output",
+        )
+
         # Batch navigation controls
         with gr.Row(equal_height=True):
             prev_batch_btn = gr.Button(
@@ -146,20 +150,20 @@ def create_results_section(dit_handler) -> dict:
                 t("results.next_btn"),
                 variant="primary", interactive=False, scale=1, size="sm"
             )
-        
+
         # One-click restore parameters button
         restore_params_btn = gr.Button(
             t("results.restore_params_btn"),
             variant="secondary", interactive=False, size="sm"
         )
-        
+
         with gr.Accordion(t("results.batch_results_title"), open=True):
             generated_audio_batch = gr.File(
                 label=t("results.all_files_label"),
                 file_count="multiple", interactive=False
             )
             generation_info = gr.Markdown(label=t("results.generation_details"))
-    
+
     # Build return dict from all_cols
     result = {
         "lm_metadata_state": lm_metadata_state,
@@ -179,7 +183,7 @@ def create_results_section(dit_handler) -> dict:
         "generated_audio_batch": generated_audio_batch,
         "generation_info": generation_info,
     }
-    
+
     for idx, col_data in enumerate(all_cols, start=1):
         result[f"generated_audio_{idx}"] = col_data["generated_audio"]
         result[f"audio_col_{idx}"] = col_data["audio_col"]
@@ -195,5 +199,5 @@ def create_results_section(dit_handler) -> dict:
         result[f"save_lrc_btn_{idx}"] = col_data["save_lrc_btn"]
         result[f"lrc_download_file_{idx}"] = col_data["lrc_download_file"]
         result[f"details_accordion_{idx}"] = col_data["details_accordion"]
-    
+
     return result

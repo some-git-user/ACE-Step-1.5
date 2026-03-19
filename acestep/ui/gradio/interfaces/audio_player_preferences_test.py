@@ -48,6 +48,10 @@ class AudioPlayerPreferencesHeadTests(unittest.TestCase):
         self.assertIn("STARTUP_RESYNC_WINDOW_MS", script)
         self.assertIn("setInterval", script)
         self.assertIn("DEFAULT_VOLUME = 0.5", script)
+        self.assertIn("acestep-status-output", script)
+        self.assertIn("playCompletionTone", script)
+        self.assertIn("STATUS_POLL_INTERVAL_MS", script)
+        self.assertIn("COMPLETION_SOUND_COOLDOWN_MS", script)
 
     def test_script_resets_audio_position_on_updates(self):
         """Regression path: script should force playback to track start on reloads."""

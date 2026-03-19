@@ -45,6 +45,11 @@ _load_env_file() {
                     INIT_LLM="--init_llm $value"
                 fi
                 ;;
+            ACESTEP_OFFLOAD_DIT_TO_CPU)
+                if [[ -n "$value" ]]; then
+                    OFFLOAD_DIT_TO_CPU="--offload_dit_to_cpu $value"
+                fi
+                ;;
             ACESTEP_DOWNLOAD_SOURCE)
                 if [[ -n "$value" && "$value" != "auto" ]]; then
                     DOWNLOAD_SOURCE="--download-source $value"
@@ -59,8 +64,28 @@ _load_env_file() {
             SERVER_NAME)
                 [[ -n "$value" ]] && SERVER_NAME="$value"
                 ;;
+            SHARE)
+                case "${value,,}" in
+                    true|1|yes|on)
+                        SHARE="--share"
+                        ;;
+                    false|0|no|off|"")
+                        SHARE=""
+                        ;;
+                    --share)
+                        SHARE="--share"
+                        ;;
+                    *)
+                        # Backward compatibility: accept advanced raw CLI fragment.
+                        SHARE="$value"
+                        ;;
+                esac
+                ;;
             LANGUAGE)
                 [[ -n "$value" ]] && LANGUAGE="$value"
+                ;;
+            ACESTEP_BATCH_SIZE)
+                [[ -n "$value" ]] && BATCH_SIZE="--batch_size $value"
                 ;;
         esac
     done < "$env_file"
@@ -71,13 +96,18 @@ _load_env_file() {
 _load_env_file
 
 # ==================== ROCm Configuration ====================
-# Force PyTorch LM backend (bypasses nano-vllm flash_attn dependency)
+# Force PyTorch LM backend (bypasses vllm engine flash_attn dependency)
 export ACESTEP_LM_BACKEND="pt"
 
-# RDNA3 GPU architecture override (RX 7900 XT/XTX, RX 7800 XT, etc.)
-# Change to 11.0.1 for gfx1101 (RX 7700 XT, RX 7800 XT)
-# Change to 11.0.2 for gfx1102 (RX 7600)
-export HSA_OVERRIDE_GFX_VERSION="${HSA_OVERRIDE_GFX_VERSION:-11.0.0}"
+# Optional RDNA3 GPU architecture override (RX 7900 XT/XTX, RX 7800 XT, etc.)
+# Set this only when needed. Forcing gfx11 on non-RDNA3 GPUs can cause instability.
+# Examples:
+#   export HSA_OVERRIDE_GFX_VERSION=11.0.0  # gfx1100
+#   export HSA_OVERRIDE_GFX_VERSION=11.0.1  # gfx1101
+#   export HSA_OVERRIDE_GFX_VERSION=11.0.2  # gfx1102
+if [[ -n "${HSA_OVERRIDE_GFX_VERSION:-}" ]]; then
+    export HSA_OVERRIDE_GFX_VERSION
+fi
 
 # MIOpen: use fast heuristic kernel selection instead of exhaustive benchmarking
 # Without this, first-run VAE decode hangs for minutes on each conv layer
@@ -85,6 +115,9 @@ export MIOPEN_FIND_MODE="FAST"
 
 # HuggingFace tokenizer parallelism
 export TOKENIZERS_PARALLELISM="false"
+
+# Reduce HIP allocator fragmentation on long-running sessions unless overridden.
+export PYTORCH_HIP_ALLOC_CONF="${PYTORCH_HIP_ALLOC_CONF:-expandable_segments:True}"
 
 # ==================== Server Configuration ====================
 : "${PORT:=7860}"
@@ -96,6 +129,11 @@ SHARE="${SHARE:-}"
 # UI language: en, zh, he, ja
 : "${LANGUAGE:=en}"
 
+# Batch size: default batch size for generation (1 to GPU-dependent max)
+# When not specified, defaults to min(2, GPU_max)
+BATCH_SIZE="${BATCH_SIZE:-}"
+# BATCH_SIZE="--batch_size 4"
+
 # ==================== Model Configuration ====================
 : "${CONFIG_PATH:=--config_path acestep-v15-turbo}"
 : "${LM_MODEL_PATH:=--lm_model_path acestep-5Hz-lm-4B}"
@@ -103,6 +141,9 @@ SHARE="${SHARE:-}"
 # CPU offload: required for 4B LM on GPUs with <=20GB VRAM
 # Disable if using 1.7B/0.6B LM or if your GPU has >=24GB VRAM
 : "${OFFLOAD_TO_CPU:=--offload_to_cpu true}"
+
+# DiT offload: can reduce ROCm startup instability on some GPUs/drivers
+: "${OFFLOAD_DIT_TO_CPU:=--offload_dit_to_cpu false}"
 
 # LLM initialization: auto (default), true, false
 INIT_LLM="${INIT_LLM:-}"
@@ -248,9 +289,11 @@ CMD="--port $PORT --server-name $SERVER_NAME --language $LANGUAGE"
 [[ -n "$CONFIG_PATH" ]] && CMD="$CMD $CONFIG_PATH"
 [[ -n "$LM_MODEL_PATH" ]] && CMD="$CMD $LM_MODEL_PATH"
 [[ -n "$OFFLOAD_TO_CPU" ]] && CMD="$CMD $OFFLOAD_TO_CPU"
+[[ -n "$OFFLOAD_DIT_TO_CPU" ]] && CMD="$CMD $OFFLOAD_DIT_TO_CPU"
 [[ -n "$INIT_LLM" ]] && CMD="$CMD $INIT_LLM"
 [[ -n "$DOWNLOAD_SOURCE" ]] && CMD="$CMD $DOWNLOAD_SOURCE"
 [[ -n "$INIT_SERVICE" ]] && CMD="$CMD $INIT_SERVICE"
+[[ -n "$BATCH_SIZE" ]] && CMD="$CMD $BATCH_SIZE"
 [[ -n "$BACKEND" ]] && CMD="$CMD $BACKEND"
 [[ -n "$ENABLE_API" ]] && CMD="$CMD $ENABLE_API"
 [[ -n "$API_KEY" ]] && CMD="$CMD $API_KEY"

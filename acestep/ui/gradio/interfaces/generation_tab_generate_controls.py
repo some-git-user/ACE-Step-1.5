@@ -31,6 +31,7 @@ def _build_left_generate_toggles(
         )
         auto_score = gr.Checkbox(
             label=t("generation.auto_score_label"),
+            info=t("generation.auto_score_info"),
             value=False,
             scale=1,
             interactive=not service_mode,
@@ -51,12 +52,14 @@ def _build_right_generate_toggles(service_mode: bool) -> tuple[gr.Checkbox, gr.C
     with gr.Column(scale=1, variant="compact"):
         autogen_checkbox = gr.Checkbox(
             label=t("generation.autogen_label"),
+            info=t("generation.autogen_info"),
             value=False,
             scale=1,
             interactive=not service_mode,
         )
         auto_lrc = gr.Checkbox(
             label=t("generation.auto_lrc_label"),
+            info=t("generation.auto_lrc_info"),
             value=False,
             scale=1,
             interactive=not service_mode,

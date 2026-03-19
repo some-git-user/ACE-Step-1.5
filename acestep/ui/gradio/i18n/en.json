@@ -240,6 +240,7 @@
     "stem_start": "Stem Start",
     "stem_end": "Stem End",
     "autogen_label": "AutoGen",
+    "autogen_info": "Automatically starts generating the next batch after the current one finishes. Useful for continuous exploration; stop it by turning AutoGen off.",
     "caption_rewrite_label": "CaptionRewrite",
     "caption_rewrite_info": "Lets the LM enhance and expand your caption before generation. Your brief description gets rewritten into a more detailed, model-friendly prompt. Useful if you write short captions and want the LM to fill in musical details.",
     "auto_label": "Auto",

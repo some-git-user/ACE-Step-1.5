@@ -1,16 +1,43 @@
 """VAE encode orchestration helpers for tiled audio-to-latent conversion."""
 
 import math
+import os
 from typing import Optional
 
 import torch
 from loguru import logger
 
-from acestep.gpu_config import get_gpu_memory_gb
+from acestep.gpu_config import get_gpu_memory_gb, is_rocm_available
 
 
 class VaeEncodeMixin:
     """High-level VAE encode entrypoints and runtime chunk policy."""
+
+    @staticmethod
+    def _get_auto_encode_chunk_size(gpu_memory_gb: float) -> int:
+        """Return auto-selected encode chunk size in samples.
+
+        The default policy is conservative on ROCm to reduce transient peak
+        allocations during VAE encode for source-audio analysis.
+        """
+        override = os.environ.get("ACESTEP_VAE_ENCODE_CHUNK_SIZE")
+        if override:
+            try:
+                value = int(override)
+                if value > 0:
+                    return value
+            except ValueError:
+                logger.warning(
+                    "[tiled_encode] Ignoring invalid ACESTEP_VAE_ENCODE_CHUNK_SIZE={!r}",
+                    override,
+                )
+
+        # ROCm cards can report enough total VRAM but still OOM on large
+        # contiguous conv allocations; keep the default chunk tighter.
+        if is_rocm_available():
+            return 48000 * 10
+
+        return 48000 * 15 if gpu_memory_gb <= 8 else 48000 * 30
 
     def tiled_encode(self, audio, chunk_size=None, overlap=None, offload_latent_to_cpu=True):
         """Encode audio to latents using overlap-discard tiling.
@@ -49,7 +76,7 @@ class VaeEncodeMixin:
                 mem_gb = self._get_effective_mps_memory_gb()
                 if mem_gb is not None:
                     gpu_memory = mem_gb
-            chunk_size = 48000 * 15 if gpu_memory <= 8 else 48000 * 30
+            chunk_size = self._get_auto_encode_chunk_size(gpu_memory)
         if overlap is None:
             overlap = 48000 * 2
 

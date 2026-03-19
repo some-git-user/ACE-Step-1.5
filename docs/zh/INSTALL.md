@@ -375,7 +375,7 @@ python -m acestep.acestep_v15_pipeline --port 7680
 | 卸载 | 默认禁用 |
 | 编译与量化 | 默认启用 |
 | LLM 推理 | 支持（已测试 `acestep-5Hz-lm-0.6B`） |
-| nanovllm 加速 | Intel GPU 暂不支持 |
+| vllm 引擎加速 | Intel GPU 暂不支持 |
 | 测试环境 | PyTorch 2.8.0（[Intel Extension for PyTorch](https://pytorch-extension.intel.com/?request=platform)） |
 
 > 注意：生成超过 2 分钟的音频时，LLM 推理速度可能下降。Intel 独立显卡预计可用但尚未测试。

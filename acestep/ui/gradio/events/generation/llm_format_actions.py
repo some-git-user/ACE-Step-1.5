@@ -1,4 +1,5 @@
 """LLM formatting action handlers for generation UI text fields."""
+from contextlib import contextmanager
 from typing import Optional
 
 import gradio as gr
@@ -27,6 +28,28 @@ def _clean_optional_wrapped_quotes(text: Optional[str]) -> Optional[str]:
     return text
 
 
+@contextmanager
+def _suppress_llm_tqdm_for_formatting(llm_handler):
+    """Temporarily disable raw tqdm output for format-only UI actions.
+
+    Gradio's request queue can misinterpret token-based tqdm updates as
+    second-based duration progress, which produces impossible previews such as
+    elapsed time exceeding the total estimate. Formatting requests do not have
+    a dedicated progress callback, so the least-risk fix is to suppress tqdm
+    for this narrow path only.
+    """
+    if not hasattr(llm_handler, "disable_tqdm"):
+        yield
+        return
+
+    previous_value = llm_handler.disable_tqdm
+    llm_handler.disable_tqdm = True
+    try:
+        yield
+    finally:
+        llm_handler.disable_tqdm = previous_value
+
+
 def _execute_format_sample(
     llm_handler,
     caption: str,
@@ -53,17 +76,18 @@ def _execute_format_sample(
     user_metadata = build_user_metadata(bpm, audio_duration, key_scale, time_signature)
     top_k_value, top_p_value = convert_lm_params(lm_top_k, lm_top_p)
 
-    result = format_sample(
-        llm_handler=llm_handler,
-        caption=caption,
-        lyrics=lyrics,
-        user_metadata=user_metadata,
-        temperature=lm_temperature,
-        top_k=top_k_value,
-        top_p=top_p_value,
-        use_constrained_decoding=True,
-        constrained_decoding_debug=constrained_decoding_debug,
-    )
+    with _suppress_llm_tqdm_for_formatting(llm_handler):
+        result = format_sample(
+            llm_handler=llm_handler,
+            caption=caption,
+            lyrics=lyrics,
+            user_metadata=user_metadata,
+            temperature=lm_temperature,
+            top_k=top_k_value,
+            top_p=top_p_value,
+            use_constrained_decoding=True,
+            constrained_decoding_debug=constrained_decoding_debug,
+        )
 
     if not result.success:
         status_message = result.status_message or t("messages.format_failed")

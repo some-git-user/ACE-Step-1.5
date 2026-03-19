@@ -146,7 +146,7 @@ class GenerationHandlersTests(unittest.TestCase):
         # Result is a tuple: (status, btn_update, accordion, *model_settings, duration_update, batch_update, think_update)
         # batch_update is at index -2 (second to last)
         batch_update = result[-2]
-        
+
         # Verify batch_update preserves the value 5 (clamped to max_batch of 8)
         self.assertEqual(batch_update["value"], 5)
         self.assertEqual(batch_update["maximum"], 8)
@@ -201,7 +201,7 @@ class GenerationHandlersTests(unittest.TestCase):
         )
 
         batch_update = result[-2]
-        
+
         # Verify batch_update defaults to min(2, max_batch)
         self.assertEqual(batch_update["value"], 2)
         self.assertEqual(batch_update["maximum"], 8)
@@ -351,6 +351,47 @@ class GenerationHandlersTests(unittest.TestCase):
         self.assertEqual(result[4], "en")
         self.assertEqual(len(result), 8)
         self.assertEqual(result[-1], "formatted")
+        format_sample_mock.assert_called_once()
+        info_mock.assert_called_once()
+
+    @patch("acestep.ui.gradio.events.generation.llm_format_actions.gr.Info")
+    @patch("acestep.ui.gradio.events.generation.llm_format_actions.format_sample")
+    def test_handle_format_caption_temporarily_suppresses_tqdm(self, format_sample_mock, info_mock):
+        """Formatting should disable raw tqdm output during the request and restore it afterward."""
+        llm_handler = SimpleNamespace(llm_initialized=True, disable_tqdm=False)
+
+        def _fake_format_sample(**kwargs):
+            self.assertTrue(kwargs["llm_handler"].disable_tqdm)
+            return SimpleNamespace(
+                success=True,
+                caption="caption out",
+                lyrics="lyrics out",
+                bpm=120,
+                duration=30.0,
+                keyscale="C major",
+                language="en",
+                timesignature="4/4",
+                status_message="formatted",
+            )
+
+        format_sample_mock.side_effect = _fake_format_sample
+
+        result = generation_handlers.handle_format_caption(
+            llm_handler=llm_handler,
+            caption="caption",
+            lyrics="lyrics",
+            bpm=120,
+            audio_duration=30.0,
+            key_scale="C major",
+            time_signature="4/4",
+            lm_temperature=0.85,
+            lm_top_k=0,
+            lm_top_p=0.9,
+            constrained_decoding_debug=False,
+        )
+
+        self.assertEqual(result[0], "caption out")
+        self.assertFalse(llm_handler.disable_tqdm)
         format_sample_mock.assert_called_once()
         info_mock.assert_called_once()
 

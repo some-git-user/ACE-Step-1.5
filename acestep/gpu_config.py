@@ -877,7 +877,7 @@ def get_lm_gpu_memory_ratio(
                 except (ValueError, TypeError):
                     pass
 
-            # The ratio is relative to total GPU memory (nano-vllm convention),
+            # The ratio is relative to total GPU memory (customized_vllm convention),
             # but we compute it so that the LM only claims what's actually free
             # minus a safety margin for DiT inference activations.
             # Reserve at least 1.5 GB for DiT inference activations
@@ -888,7 +888,7 @@ def get_lm_gpu_memory_ratio(
             usable_for_lm = min(usable_for_lm, total_target_gb)
 
             # Convert to ratio of total GPU memory
-            # nano-vllm uses: target_total_usage = total * gpu_memory_utilization
+            # customized_vllm uses: target_total_usage = total * gpu_memory_utilization
             # We want: (total * ratio) = current_usage + usable_for_lm
             current_usage_gb = actual_total_gb - free_gb
             desired_total_usage = current_usage_gb + usable_for_lm

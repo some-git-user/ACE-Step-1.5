@@ -1,6 +1,8 @@
 """Unit tests for extracted VAE encode mixins."""
 
+import os
 import unittest
+from unittest.mock import patch
 
 import torch
 
@@ -143,6 +145,19 @@ class VaeEncodeMixinTests(unittest.TestCase):
         num_steps = 4
         out = host._tiled_encode_offload_cpu(audio, 1, 40, stride, overlap, num_steps, chunk_size)
         self.assertEqual(out.device.type, "cpu")
+
+    def test_get_auto_encode_chunk_size_uses_rocm_safe_default(self):
+        """ROCm path should use a conservative encode chunk size by default."""
+        with patch("acestep.core.generation.handler.vae_encode.is_rocm_available", return_value=True):
+            value = _Host._get_auto_encode_chunk_size(16.0)
+        self.assertEqual(value, 480000)
+
+    def test_get_auto_encode_chunk_size_honors_env_override(self):
+        """Env override should take precedence over auto policy."""
+        with patch.dict(os.environ, {"ACESTEP_VAE_ENCODE_CHUNK_SIZE": "240000"}, clear=False):
+            with patch("acestep.core.generation.handler.vae_encode.is_rocm_available", return_value=True):
+                value = _Host._get_auto_encode_chunk_size(16.0)
+        self.assertEqual(value, 240000)
 
 
 if __name__ == "__main__":

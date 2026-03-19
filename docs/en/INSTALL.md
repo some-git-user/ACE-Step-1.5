@@ -485,7 +485,7 @@ See [ACE-Step1.5-Rocm-Manual-Linux.md](ACE-Step1.5-Rocm-Manual-Linux.md) for a d
 | Offload | Disabled by default |
 | Compile & Quantization | Enabled by default |
 | LLM Inference | Supported (tested with `acestep-5Hz-lm-0.6B`) |
-| nanovllm acceleration | NOT supported on Intel GPUs |
+| vllm engine acceleration | NOT supported on Intel GPUs |
 | Test Environment | PyTorch 2.8.0 from [Intel Extension for PyTorch](https://pytorch-extension.intel.com/?request=platform) |
 
 > **Note:** LLM inference speed may decrease when generating audio longer than 2 minutes. Intel discrete GPUs are expected to work but not yet tested.

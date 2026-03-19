@@ -2,6 +2,8 @@
 5Hz LM (Language Model) Handler
 Handles all LM-related operations including initialization and generation
 """
+import ctypes
+import gc
 import os
 import sys
 import traceback
@@ -32,12 +34,32 @@ from acestep.gpu_config import get_lm_gpu_memory_ratio, get_gpu_memory_gb, get_l
 VRAM_SAFE_FREE_GB = 2.0
 
 
+def _trim_glibc_heap() -> None:
+    """Return freed glibc heap pages to the OS on Linux.
+
+    After large PyTorch tensor allocations are freed and ``gc.collect()``
+    runs, glibc's malloc retains freed pages in its internal arena instead
+    of returning them to the OS.  The Linux OOM killer accounts for this
+    retained memory against the process.  Calling ``malloc_trim(0)`` forces
+    glibc to release all free arena pages back to the kernel immediately,
+    preventing false OOM kills when the next heavy allocation (e.g. DiT)
+    would otherwise compete with the arena bloat.
+
+    This is a no-op on non-Linux platforms or when libc is unavailable.
+    """
+    try:
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        libc.malloc_trim(ctypes.c_size_t(0))
+    except Exception:
+        pass
+
+
 def _warn_if_prerelease_python():
     v = sys.version_info
     if getattr(v, "releaselevel", "final") != "final" and sys.platform.startswith("linux"):
         warnings.warn(
             f"Detected pre-release Python {sys.version.split()[0]} ({getattr(v, 'releaselevel', '')}). "
-            "This is known to cause segmentation faults with vLLM/nano-vllm on Linux. "
+            "This is known to cause segmentation faults with the vLLM engine on Linux. "
             "Please install a stable Python release (e.g. 3.11.12+), or use --backend pt as a workaround.",
             RuntimeWarning,
             stacklevel=2,
@@ -114,7 +136,6 @@ class LLMHandler:
             self._mlx_model = None
             self._mlx_model_path = None
             try:
-                import gc
                 gc.collect()
             except Exception:
                 pass
@@ -129,6 +150,7 @@ class LLMHandler:
             elif hasattr(torch, "xpu") and torch.xpu.is_available():
                 torch.xpu.empty_cache()
                 torch.xpu.synchronize()
+            _trim_glibc_heap()
         except Exception:
             pass
 
@@ -591,7 +613,7 @@ class LLMHandler:
             # Disable CUDA/HIP graph capture on ROCm (unverified on RDNA3 Windows),
             # on Jetson (SDPA paged-cache decode calls .item() during capture),
             # and when flash_attn is not installed (same .item() incompatibility on all CUDA hardware).
-            # When flash_attn is unavailable, nano-vllm falls back to _sdpa_decode_with_paged_cache
+            # When flash_attn is unavailable, customized_vllm falls back to _sdpa_cached_decode
             # which contains a Python loop with .item() calls.  These force CPU-GPU
             # synchronisation that is forbidden inside torch.cuda.CUDAGraph capture,
             # corrupting the CUDA context and causing downstream errors such as:
@@ -603,7 +625,7 @@ class LLMHandler:
                     dev_name = torch.cuda.get_device_name(0).lower()
                     is_jetson = any(k in dev_name for k in ("orin", "xavier", "tegra"))
                     if is_jetson:
-                        logger.info(f"Jetson GPU detected ({dev_name}): disabling CUDA graph capture for nano-vllm")
+                        logger.info(f"Jetson GPU detected ({dev_name}): disabling CUDA graph capture for customized_vllm")
                 except Exception:
                     pass
             _has_flash_attn = False
@@ -614,7 +636,7 @@ class LLMHandler:
                 pass
             if not _has_flash_attn:
                 logger.info(
-                    "flash_attn not installed: disabling CUDA graph capture for nano-vllm "
+                    "flash_attn not installed: disabling CUDA graph capture for customized_vllm "
                     "(SDPA fallback uses .item() calls in paged-cache decode that are "
                     "incompatible with CUDA graph capture)"
                 )
@@ -626,7 +648,7 @@ class LLMHandler:
                 pass
             if not _has_triton:
                 logger.info(
-                    "Triton not available: disabling CUDA graph capture for nano-vllm "
+                    "Triton not available: disabling CUDA graph capture for customized_vllm "
                     "(CUDA graphs require torch.compile which depends on Triton)"
                 )
             enforce_eager_for_vllm = bool(is_rocm or is_jetson or not _has_flash_attn or not _has_triton)
@@ -659,7 +681,9 @@ class LLMHandler:
                     status_msg = f"✅ 5Hz LM initialized (PyTorch fallback, MLX not available)\nModel: {full_lm_model_path}\nBackend: PyTorch"
                     return status_msg, True
 
-            if backend == "vllm" and device != "cuda":
+            # Normalize device string for backend check (extract device type from "cuda:0" -> "cuda")
+            device_type = str(device).split(":")[0]
+            if backend == "vllm" and device_type != "cuda":
                 logger.info(
                     f"[initialize] vllm backend requires CUDA, using PyTorch backend for device={device}."
                 )
@@ -751,11 +775,11 @@ class LLMHandler:
             logger.error("CUDA/ROCm is not available. Please check your GPU setup.")
             return "❌ CUDA/ROCm is not available. Please check your GPU setup."
         try:
-            from nanovllm import LLM, SamplingParams
-        except ImportError:
+            from acestep.customized_vllm import LLM, SamplingParams
+        except ImportError as exc:
             self.llm_initialized = False
-            logger.error("nano-vllm is not installed. Please install it using 'cd acestep/third_parts/nano-vllm && pip install .'")
-            return "❌ nano-vllm is not installed. Please install it using 'cd acestep/third_parts/nano-vllm && pip install .'"
+            logger.error(f"Failed to import customized_vllm engine: {exc}")
+            return f"❌ Failed to import customized_vllm engine: {exc}"
 
         try:
             current_device = torch.cuda.current_device()
@@ -799,6 +823,7 @@ class LLMHandler:
 
             try:
                 start_time = time.time()
+                logger.info(f"[vLLM Initialization] Starting vLLM backend initialization (model={model_path}, max_model_len={self.max_model_len}, gpu_mem_util={gpu_memory_utilization:.3f})")
                 self.llm = LLM(
                     model=model_path,
                     enforce_eager=enforce_eager,
@@ -857,7 +882,7 @@ class LLMHandler:
         Accepts either a single formatted prompt (str) or a list of formatted prompts (List[str]).
         Returns a single string for single mode, or a list of strings for batch mode.
         """
-        from nanovllm import SamplingParams
+        from acestep.customized_vllm import SamplingParams
 
         # Determine if batch mode
         formatted_prompt_list, is_batch = self._normalize_batch_input(formatted_prompts)
@@ -1490,8 +1515,11 @@ class LLMHandler:
                         seeds=seeds,
                     )
             except Exception as e:
-                error_msg = f"Error in batch codes generation: {str(e)}"
-                logger.error(error_msg)
+                error_detail = traceback.format_exc()
+                logger.error(
+                    f"Error in batch codes generation: {type(e).__name__}: {e}\n{error_detail}"
+                )
+                error_msg = f"Error in batch codes generation: {type(e).__name__}: {e}"
                 return {
                     "metadata": [],
                     "audio_codes": [],
@@ -2332,8 +2360,11 @@ class LLMHandler:
         lyrics = cfg.get("lyrics", "")
         cot_text = cfg.get("cot_text", "")
 
+        logger.debug(f"[generate_from_formatted_prompt] Backend: {self.llm_backend}, Device: {self.device}, Offload: {self.offload_to_cpu}")
+
         try:
             if self.llm_backend == "vllm":
+                logger.info("[generate_from_formatted_prompt] Using vLLM backend for generation")
                 output_text = self._run_vllm(
                     formatted_prompts=formatted_prompt,
                     temperature=temperature,
@@ -2385,6 +2416,7 @@ class LLMHandler:
                 return output_text, f"✅ Generated successfully (mlx) | length={len(output_text)}"
 
             # PyTorch backend (fallback)
+            logger.info(f"[generate_from_formatted_prompt] Using PyTorch backend (device={self.device}, offload={self.offload_to_cpu}) for generation")
             output_text = self._run_pt(
                 formatted_prompts=formatted_prompt,
                 temperature=temperature,
@@ -2414,11 +2446,11 @@ class LLMHandler:
             import traceback
             error_detail = traceback.format_exc()
             logger.error(f"Error in generate_from_formatted_prompt: {type(e).__name__}: {e}\n{error_detail}")
-            # Reset nano-vllm state on error to prevent stale context from causing
+            # Reset vllm engine state on error to prevent stale context from causing
             # subsequent CUDA illegal memory access errors
             if self.llm_backend == "vllm":
                 try:
-                    from nanovllm.utils.context import reset_context
+                    from acestep.customized_vllm import reset_context
                     reset_context()
                 except ImportError:
                     pass
@@ -4013,7 +4045,7 @@ class LLMHandler:
             yield
             return
 
-        # If using nanovllm or MLX, do not offload (managed differently)
+        # If using vllm engine or MLX, do not offload (managed differently)
         if self.llm_backend in ("vllm", "mlx"):
             yield
             return
@@ -4031,17 +4063,19 @@ class LLMHandler:
         except StopIteration:
             current_device = None
         target_device = str(self.device).split(":")[0]
+        logger.debug(f"[_load_model_context] current_device={current_device}, target_device={target_device}, self.device={self.device}, offload_to_cpu={self.offload_to_cpu}")
         if current_device == target_device:
+            logger.debug(f"[_load_model_context] Model already on {target_device}, skipping load/offload")
             yield
             return
 
         # Load to GPU
-        logger.info(f"Loading LLM to {self.device}")
+        logger.info(f"[_load_model_context] Loading LLM from {current_device} to {self.device}")
         start_time = time.time()
         if hasattr(model, "to"):
             model.to(self.device).to(self.dtype)
         load_time = time.time() - start_time
-        logger.info(f"Loaded LLM to {self.device} in {load_time:.4f}s")
+        logger.info(f"[_load_model_context] Loaded LLM to {self.device} in {load_time:.4f}s")
 
         try:
             yield
@@ -4058,6 +4092,8 @@ class LLMHandler:
                 torch.xpu.empty_cache()
             elif hasattr(torch.backends, "mps") and torch.backends.mps.is_available() and hasattr(torch, "mps") and hasattr(torch.mps, "empty_cache"):
                 torch.mps.empty_cache()
+            gc.collect()
+            _trim_glibc_heap()
             offload_time = time.time() - start_time
             logger.info(f"Offloaded LLM to CPU in {offload_time:.4f}s")
 

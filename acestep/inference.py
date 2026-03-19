@@ -6,6 +6,7 @@ designed for third-party integration. It offers both a simplified API and
 backward-compatible Gradio UI support.
 """
 
+import gc
 import math
 import os
 import tempfile
@@ -19,6 +20,119 @@ from acestep.audio_utils import AudioSaver, apply_fade, generate_uuid_from_param
 
 # HuggingFace Space environment detection
 IS_HUGGINGFACE_SPACE = os.environ.get("SPACE_ID") is not None
+
+
+def _lm_gpu_context_enter(llm_handler, target_device: str) -> bool:
+    """Move the PT-backend LLM to GPU for faster inference.
+
+    When ``offload_to_cpu=True`` is enabled for 16-20 GB GPUs, the LLM is
+    initialised on CPU to share VRAM with the DiT.  Without this helper, all
+    LLM inference runs on CPU (~7 tok/s) even though the GPU is mostly idle
+    during Phase 1.  Moving the LLM to GPU yields ~10-15× speed-up.
+
+    Only moves when:
+    - ``llm_backend == "pt"``  (vllm/mlx handle their own device placement)
+    - LLM is currently on CPU
+    - A free VRAM OOM does *not* occur on the move attempt
+
+    Returns:
+        True if the LLM was actually moved to GPU (caller must call
+        ``_lm_gpu_context_exit`` when done).
+    """
+    if (
+        llm_handler is None
+        or getattr(llm_handler, "llm_backend", None) != "pt"
+        or getattr(llm_handler, "llm", None) is None
+    ):
+        return False
+    try:
+        param = next(llm_handler.llm.parameters())
+        if param.device.type != "cpu":
+            return False  # Already on GPU; nothing to do.
+    except StopIteration:
+        return False
+
+    try:
+        llm_handler.llm = llm_handler.llm.to(target_device)
+        llm_handler.device = target_device
+        logger.info(f"[inference] Moved 5Hz LM to {target_device} for GPU inference")
+        return True
+    except (torch.cuda.OutOfMemoryError, RuntimeError) as exc:
+        logger.warning(
+            f"[inference] Could not move 5Hz LM to {target_device} ({exc}); "
+            "running on CPU (generation will be slower)"
+        )
+        return False
+
+
+def _trim_glibc_heap() -> None:
+    """Return freed glibc heap pages to the OS on Linux.
+
+    After large PyTorch tensor allocations are freed and ``gc.collect()``
+    runs, glibc's malloc keeps the pages in its internal arena rather than
+    returning them to the OS.  This means the Linux OOM killer still sees
+    the process as holding that memory.  Calling ``malloc_trim(0)`` forces
+    glibc to release all free arena pages back to the kernel immediately.
+
+    This is a no-op on non-Linux platforms or when libc is unavailable.
+    """
+    try:
+        import ctypes
+        libc = ctypes.CDLL("libc.so.6", use_errno=True)
+        libc.malloc_trim(ctypes.c_size_t(0))
+    except Exception:
+        pass
+
+
+def _lm_gpu_context_exit(llm_handler) -> None:
+    """Return the LLM to CPU after GPU inference and free VRAM.
+
+    Safe to call even if ``_lm_gpu_context_enter`` returned False — the
+    function checks the current device before doing anything.
+    """
+    if (
+        llm_handler is None
+        or getattr(llm_handler, "llm_backend", None) != "pt"
+        or getattr(llm_handler, "llm", None) is None
+    ):
+        return
+    try:
+        param = next(llm_handler.llm.parameters())
+        if param.device.type == "cpu":
+            return  # Already on CPU; nothing to do.
+    except StopIteration:
+        return
+
+    logger.info("[inference] Moving 5Hz LM back to CPU after GPU inference...")
+    llm_handler.llm = llm_handler.llm.to("cpu")
+    llm_handler.device = "cpu"
+    if torch.cuda.is_available():
+        torch.cuda.empty_cache()
+    gc.collect()
+    # Return freed glibc heap pages to the OS so the DiT pass doesn't
+    # compete for RAM that is still held in the allocator's free list.
+    _trim_glibc_heap()
+
+
+def _resolve_lm_target_device(llm_handler) -> str:
+    """Resolve the accelerator device used for temporary LM GPU execution.
+
+    For offload mode, ``llm_handler.device`` may currently be ``"cpu"`` after a
+    previous inference cycle. In that case, prefer the best available
+    accelerator so formatting actions can still run on GPU.
+    """
+    configured_device = str(getattr(llm_handler, "device", "cpu")).split(":")[0]
+    if configured_device != "cpu":
+        return configured_device
+
+    if torch.cuda.is_available():
+        return "cuda"
+    if hasattr(torch, "xpu") and torch.xpu.is_available():
+        return "xpu"
+    if hasattr(torch.backends, "mps") and torch.backends.mps.is_available():
+        return "mps"
+    return "cpu"
+
 
 def _get_spaces_gpu_decorator(duration=180):
     """
@@ -38,37 +152,37 @@ def _get_spaces_gpu_decorator(duration=180):
 @dataclass
 class GenerationParams:
     """Configuration for music generation parameters.
-    
+
     Attributes:
         # Text Inputs
         caption: A short text prompt describing the desired music (main prompt). < 512 characters
         lyrics: Lyrics for the music. Use "[Instrumental]" for instrumental songs. < 4096 characters
         instrumental: If True, generate instrumental music regardless of lyrics.
-        
+
         # Music Metadata
         bpm: BPM (beats per minute), e.g., 120. Set to None for automatic estimation. 30 ~ 300
         keyscale: Musical key (e.g., "C Major", "Am"). Leave empty for auto-detection. A-G, #/♭, major/minor
         timesignature: Time signature (2 for '2/4', 3 for '3/4', 4 for '4/4', 6 for '6/8'). Leave empty for auto-detection.
         vocal_language: Language code for vocals, e.g., "en", "zh", "ja", or "unknown". see acestep/constants.py:VALID_LANGUAGES
         duration: Target audio length in seconds. If <0 or None, model chooses automatically. 10 ~ 600
-        
+
         # Audio Post-Processing
         enable_normalization: Whether to apply loudness normalization to the output audio.
         normalization_db: Target loudness in dB for normalization (e.g., -1.0 for -1 dBFS peak).
         latent_shift: Additive shift applied to DiT latents before VAE decode (default 0, no shift).
         latent_rescale: Multiplicative rescale applied to DiT latents before VAE decode (default 1.0, no rescale).
-        
+
         # Generation Parameters
         inference_steps: Number of diffusion steps (e.g., 8 for turbo, 32–100 for base model).
         guidance_scale: CFG (classifier-free guidance) strength. Higher means following the prompt more strictly. Only support for non-turbo model.
         seed: Integer seed for reproducibility. -1 means use random seed each time.
-        
+
         # Advanced DiT Parameters
         use_adg: Whether to use Adaptive Dual Guidance (only works for base model).
         cfg_interval_start: Start ratio (0.0–1.0) to apply CFG.
         cfg_interval_end: End ratio (0.0–1.0) to apply CFG.
         shift: Timestep shift factor (default 1.0). When != 1.0, applies t = shift * t / (1 + (shift - 1) * t) to timesteps.
-        
+
         # Task-Specific Parameters
         task_type: Type of generation task. One of: "text2music", "cover", "repaint", "lego", "extract", "complete".
         reference_audio: Path to a reference audio file for style transfer or cover tasks.
@@ -78,7 +192,7 @@ class GenerationParams:
         repainting_end: For repaint/lego tasks: end time in seconds for region to repaint (-1 for until end).
         audio_cover_strength: Strength of reference audio/codes influence (range 0.0–1.0). set smaller (0.2) for style transfer tasks.
         instruction: Optional task instruction prompt. If empty, auto-generated by system.
-        
+
         # 5Hz Language Model Parameters for CoT reasoning
         thinking: If True, enable 5Hz Language Model "Chain-of-Thought" reasoning for semantic/music metadata and codes.
         lm_temperature: Sampling temperature for the LLM (0.0–2.0). Higher = more creative/varied results.
@@ -176,7 +290,7 @@ class GenerationParams:
 @dataclass
 class GenerationConfig:
     """Configuration for music generation.
-    
+
     Attributes:
         batch_size: Number of audio samples to generate
         allow_lm_batch: Whether to allow batch processing in LM
@@ -205,7 +319,7 @@ class GenerationConfig:
 @dataclass
 class GenerationResult:
     """Result of music generation.
-    
+
     Attributes:
         # Audio Outputs
         audios: List of audio dictionaries with paths, keys, params
@@ -232,7 +346,7 @@ class GenerationResult:
 @dataclass
 class UnderstandResult:
     """Result of music understanding from audio codes.
-    
+
     Attributes:
         # Metadata Fields
         caption: Generated caption describing the music
@@ -242,7 +356,7 @@ class UnderstandResult:
         keyscale: Musical key (e.g., "C Major")
         language: Vocal language code (e.g., "en", "zh")
         timesignature: Time signature (e.g., "4/4")
-        
+
         # Status
         status_message: Status message from understanding
         success: Whether understanding completed successfully
@@ -256,7 +370,7 @@ class UnderstandResult:
     keyscale: str = ""
     language: str = ""
     timesignature: str = ""
-    
+
     # Status
     status_message: str = ""
     success: bool = True
@@ -324,13 +438,13 @@ def generate_music(
     progress=None,
 ) -> GenerationResult:
     """Generate music using ACE-Step model with optional LM reasoning.
-    
+
     Args:
         dit_handler: Initialized DiT model handler (AceStepHandler instance)
         llm_handler: Initialized LLM handler (LLMHandler instance)
         params: Generation parameters (GenerationParams instance)
         config: Generation configuration (GenerationConfig instance)
-        
+
     Returns:
         GenerationResult with generated audio files and metadata
     """
@@ -395,7 +509,7 @@ def generate_music(
         # Skip LM for cover/repaint tasks - these tasks use reference/src audio directly
         # and don't need LM to generate audio codes
         skip_lm_tasks = {"cover", "repaint"}
-        
+
         # Determine if we should use LLM
         # LLM is needed for:
         # 1. thinking=True: generate audio codes via LM
@@ -405,15 +519,15 @@ def generate_music(
         need_lm_for_cot = params.use_cot_caption or params.use_cot_language or params.use_cot_metas
         use_lm = (params.thinking or need_lm_for_cot) and llm_handler is not None and llm_handler.llm_initialized and params.task_type not in skip_lm_tasks
         lm_status = []
-        
+
         if params.task_type in skip_lm_tasks:
             logger.info(f"Skipping LM for task_type='{params.task_type}' - using DiT directly")
-        
+
         logger.info(f"[generate_music] LLM usage decision: thinking={params.thinking}, "
                    f"use_cot_caption={params.use_cot_caption}, use_cot_language={params.use_cot_language}, "
                    f"use_cot_metas={params.use_cot_metas}, need_lm_for_cot={need_lm_for_cot}, "
                    f"llm_initialized={llm_handler.llm_initialized if llm_handler else False}, use_lm={use_lm}")
-        
+
         if use_lm:
             # Convert sampling parameters - handle None values safely
             top_k_value = None if not params.lm_top_k or params.lm_top_k == 0 else int(params.lm_top_k)
@@ -461,6 +575,13 @@ def generate_music(
             all_metadata_list = []
             all_audio_codes_list = []
 
+            # Move LM to GPU for the duration of the inference loop when it was
+            # offloaded to CPU (offload_to_cpu=True path on 16-20 GB GPUs).
+            # LLM inference on CPU is 10-20x slower than on GPU; the DiT's INT8
+            # footprint (~2.4 GB) leaves plenty of VRAM for the 1.7 B LM (~3.4 GB bf16).
+            _lm_device = getattr(dit_handler, "device", "cuda")
+            _lm_moved = _lm_gpu_context_enter(llm_handler, _lm_device)
+
             for chunk_idx in range(num_chunks):
                 chunk_start = chunk_idx * max_inference_batch_size
                 chunk_end = min(chunk_start + max_inference_batch_size, actual_batch_size)
@@ -498,6 +619,8 @@ def generate_music(
                 if not result.get("success", False):
                     error_msg = result.get("error", "Unknown LM error")
                     lm_status.append(f"❌ LM Error: {error_msg}")
+                    # Restore LM to CPU before early return so VRAM is freed for the DiT.
+                    _lm_gpu_context_exit(llm_handler)
                     # Return early with error
                     return GenerationResult(
                         audios=[],
@@ -530,6 +653,10 @@ def generate_music(
 
                     time_str = ", ".join([f"{k}: {v:.2f}s" for k, v in lm_chunk_time_costs.items()])
                     lm_status.append(f"✅ LM chunk {chunk_idx+1}: {time_str}")
+
+            # Restore LM to CPU now that all LM chunks are complete.
+            # This frees ~3.4 GB VRAM before DiT diffusion starts.
+            _lm_gpu_context_exit(llm_handler)
 
             lm_generated_metadata = all_metadata_list[0] if all_metadata_list else None
             lm_generated_audio_codes_list = all_audio_codes_list
@@ -693,12 +820,12 @@ def generate_music(
                  try:
                      peak_before = torch.max(torch.abs(audio_tensor)).item()
                      logger.info(f"[Normalization] Audio {idx} BEFORE: Peak={peak_before:.4f}, Target={params.normalization_db}dB")
-                     
+
                      audio_tensor = normalize_audio(audio_tensor, params.normalization_db)
-                     
+
                      peak_after = torch.max(torch.abs(audio_tensor)).item()
                      logger.info(f"[Normalization] Audio {idx} AFTER: Peak={peak_after:.4f}")
-                     
+
                      # Update the tensor in the dict so downstream uses the normalized version ??
                      # Actually we use audio_tensor variable below, so it's fine.
                  except Exception as e:
@@ -738,7 +865,7 @@ def generate_music(
                     # Handle wav32 special case for extension
                     file_ext = "wav" if audio_format == "wav32" else audio_format
                     audio_file = os.path.join(save_dir, f"{audio_key}.{file_ext}")
-                    
+
                     audio_path = audio_saver.save_audio(audio_tensor,
                                                         audio_file,
                                                         sample_rate=sample_rate,
@@ -820,15 +947,15 @@ def understand_music(
     constrained_decoding_debug: bool = False,
 ) -> UnderstandResult:
     """Understand music from audio codes using the 5Hz Language Model.
-    
+
     This function analyzes audio semantic codes and generates metadata about the music,
     including caption, lyrics, BPM, duration, key scale, language, and time signature.
-    
+
     If audio_codes is empty or "NO USER INPUT", the LM will generate a sample example
     instead of analyzing existing codes.
-    
+
     Note: cfg_scale and negative_prompt are not supported in understand mode.
-    
+
     Args:
         llm_handler: Initialized LLM handler (LLMHandler instance)
         audio_codes: String of audio code tokens (e.g., "<|audio_code_123|><|audio_code_456|>...")
@@ -839,10 +966,10 @@ def understand_music(
         repetition_penalty: Repetition penalty (1.0 = no penalty)
         use_constrained_decoding: Whether to use FSM-based constrained decoding for metadata
         constrained_decoding_debug: Whether to enable debug logging for constrained decoding
-        
+
     Returns:
         UnderstandResult with parsed metadata fields and status
-        
+
     Example:
         >>> result = understand_music(llm_handler, audio_codes="<|audio_code_123|>...")
         >>> if result.success:
@@ -857,11 +984,11 @@ def understand_music(
             success=False,
             error="LLM not initialized",
         )
-    
+
     # If codes are empty, use "NO USER INPUT" to generate a sample example
     if not audio_codes or not audio_codes.strip():
         audio_codes = "NO USER INPUT"
-    
+
     try:
         # Call LLM understanding
         metadata, status = llm_handler.understand_audio_from_codes(
@@ -873,7 +1000,7 @@ def understand_music(
             use_constrained_decoding=use_constrained_decoding,
             constrained_decoding_debug=constrained_decoding_debug,
         )
-        
+
         # Check if LLM returned empty metadata (error case)
         if not metadata:
             return UnderstandResult(
@@ -881,14 +1008,14 @@ def understand_music(
                 success=False,
                 error=status or "Empty metadata returned",
             )
-        
+
         # Extract and convert fields
         caption = metadata.get('caption', '')
         lyrics = metadata.get('lyrics', '')
         keyscale = metadata.get('keyscale', '')
         language = metadata.get('language', metadata.get('vocal_language', ''))
         timesignature = metadata.get('timesignature', '')
-        
+
         # Convert BPM to int
         bpm = None
         bpm_value = metadata.get('bpm')
@@ -897,7 +1024,7 @@ def understand_music(
                 bpm = int(bpm_value)
             except (ValueError, TypeError):
                 pass
-        
+
         # Convert duration to float
         duration = None
         duration_value = metadata.get('duration')
@@ -906,7 +1033,7 @@ def understand_music(
                 duration = float(duration_value)
             except (ValueError, TypeError):
                 pass
-        
+
         # Clean up N/A values
         if keyscale == 'N/A':
             keyscale = ''
@@ -914,7 +1041,7 @@ def understand_music(
             language = ''
         if timesignature == 'N/A':
             timesignature = ''
-        
+
         return UnderstandResult(
             caption=caption,
             lyrics=lyrics,
@@ -927,7 +1054,7 @@ def understand_music(
             success=True,
             error=None,
         )
-        
+
     except Exception as e:
         logger.exception("Music understanding failed")
         return UnderstandResult(
@@ -940,11 +1067,11 @@ def understand_music(
 @dataclass
 class CreateSampleResult:
     """Result of creating a music sample from a natural language query.
-    
+
     This is used by the "Simple Mode" / "Inspiration Mode" feature where users
     provide a natural language description and the LLM generates a complete
     sample with caption, lyrics, and metadata.
-    
+
     Attributes:
         # Metadata Fields
         caption: Generated detailed music description/caption
@@ -955,7 +1082,7 @@ class CreateSampleResult:
         language: Vocal language code (e.g., "en", "zh")
         timesignature: Time signature (e.g., "4")
         instrumental: Whether this is an instrumental piece
-        
+
         # Status
         status_message: Status message from sample creation
         success: Whether sample creation completed successfully
@@ -970,7 +1097,7 @@ class CreateSampleResult:
     language: str = ""
     timesignature: str = ""
     instrumental: bool = False
-    
+
     # Status
     status_message: str = ""
     success: bool = True
@@ -994,15 +1121,15 @@ def create_sample(
     constrained_decoding_debug: bool = False,
 ) -> CreateSampleResult:
     """Create a music sample from a natural language query using the 5Hz Language Model.
-    
+
     This is the "Simple Mode" / "Inspiration Mode" feature that takes a user's natural
     language description of music and generates a complete sample including:
     - Detailed caption/description
     - Lyrics (unless instrumental)
     - Metadata (BPM, duration, key, language, time signature)
-    
+
     Note: cfg_scale and negative_prompt are not supported in create_sample mode.
-    
+
     Args:
         llm_handler: Initialized LLM handler (LLMHandler instance)
         query: User's natural language music description (e.g., "a soft Bengali love song")
@@ -1016,10 +1143,10 @@ def create_sample(
         repetition_penalty: Repetition penalty (1.0 = no penalty)
         use_constrained_decoding: Whether to use FSM-based constrained decoding
         constrained_decoding_debug: Whether to enable debug logging
-        
+
     Returns:
         CreateSampleResult with generated sample fields and status
-        
+
     Example:
         >>> result = create_sample(llm_handler, "a soft Bengali love song for a quiet evening", vocal_language="bn")
         >>> if result.success:
@@ -1034,7 +1161,7 @@ def create_sample(
             success=False,
             error="LLM not initialized",
         )
-    
+
     try:
         # Call LLM to create sample
         metadata, status = llm_handler.create_sample_from_query(
@@ -1048,7 +1175,7 @@ def create_sample(
             use_constrained_decoding=use_constrained_decoding,
             constrained_decoding_debug=constrained_decoding_debug,
         )
-        
+
         # Check if LLM returned empty metadata (error case)
         if not metadata:
             return CreateSampleResult(
@@ -1056,7 +1183,7 @@ def create_sample(
                 success=False,
                 error=status or "Empty metadata returned",
             )
-        
+
         # Extract and convert fields
         caption = metadata.get('caption', '')
         lyrics = metadata.get('lyrics', '')
@@ -1064,7 +1191,7 @@ def create_sample(
         language = metadata.get('language', metadata.get('vocal_language', ''))
         timesignature = metadata.get('timesignature', '')
         is_instrumental = metadata.get('instrumental', instrumental)
-        
+
         # Convert BPM to int
         bpm = None
         bpm_value = metadata.get('bpm')
@@ -1073,7 +1200,7 @@ def create_sample(
                 bpm = int(bpm_value)
             except (ValueError, TypeError):
                 pass
-        
+
         # Convert duration to float
         duration = None
         duration_value = metadata.get('duration')
@@ -1082,7 +1209,7 @@ def create_sample(
                 duration = float(duration_value)
             except (ValueError, TypeError):
                 pass
-        
+
         # Clean up N/A values
         if keyscale == 'N/A':
             keyscale = ''
@@ -1090,7 +1217,7 @@ def create_sample(
             language = ''
         if timesignature == 'N/A':
             timesignature = ''
-        
+
         return CreateSampleResult(
             caption=caption,
             lyrics=lyrics,
@@ -1104,7 +1231,7 @@ def create_sample(
             success=True,
             error=None,
         )
-        
+
     except Exception as e:
         logger.exception("Sample creation failed")
         return CreateSampleResult(
@@ -1117,10 +1244,10 @@ def create_sample(
 @dataclass
 class FormatSampleResult:
     """Result of formatting user-provided caption and lyrics.
-    
+
     This is used by the "Format" feature where users provide caption and lyrics,
     and the LLM formats them into structured music metadata and an enhanced description.
-    
+
     Attributes:
         # Metadata Fields
         caption: Enhanced/formatted music description/caption
@@ -1130,7 +1257,7 @@ class FormatSampleResult:
         keyscale: Musical key (e.g., "C Major")
         language: Vocal language code (e.g., "en", "zh")
         timesignature: Time signature (e.g., "4")
-        
+
         # Status
         status_message: Status message from formatting
         success: Whether formatting completed successfully
@@ -1144,7 +1271,7 @@ class FormatSampleResult:
     keyscale: str = ""
     language: str = ""
     timesignature: str = ""
-    
+
     # Status
     status_message: str = ""
     success: bool = True
@@ -1168,16 +1295,16 @@ def format_sample(
     constrained_decoding_debug: bool = False,
 ) -> FormatSampleResult:
     """Format user-provided caption and lyrics using the 5Hz Language Model.
-    
+
     This function takes user input (caption and lyrics) and generates structured
     music metadata including an enhanced caption, BPM, duration, key, language,
     and time signature.
-    
+
     If user_metadata is provided, those values will be used to constrain the
     decoding, ensuring the output matches user-specified values.
-    
+
     Note: cfg_scale and negative_prompt are not supported in format mode.
-    
+
     Args:
         llm_handler: Initialized LLM handler (LLMHandler instance)
         caption: User's caption/description (e.g., "Latin pop, reggaeton")
@@ -1190,10 +1317,10 @@ def format_sample(
         repetition_penalty: Repetition penalty (1.0 = no penalty)
         use_constrained_decoding: Whether to use FSM-based constrained decoding for metadata
         constrained_decoding_debug: Whether to enable debug logging for constrained decoding
-        
+
     Returns:
         FormatSampleResult with formatted metadata fields and status
-        
+
     Example:
         >>> result = format_sample(llm_handler, "Latin pop, reggaeton", "[Verse 1]\\nHola mundo...")
         >>> if result.success:
@@ -1208,8 +1335,18 @@ def format_sample(
             success=False,
             error="LLM not initialized",
         )
-    
+
+    lm_moved_to_accelerator = False
     try:
+        # Keep parity with generate_music: in offload mode, temporarily move PT
+        # backend LM to accelerator for formatting actions as well.
+        if getattr(llm_handler, "offload_to_cpu", False):
+            lm_target_device = _resolve_lm_target_device(llm_handler)
+            lm_moved_to_accelerator = _lm_gpu_context_enter(
+                llm_handler,
+                lm_target_device,
+            )
+
         # Call LLM formatting
         metadata, status = llm_handler.format_sample_from_input(
             caption=caption,
@@ -1222,7 +1359,7 @@ def format_sample(
             use_constrained_decoding=use_constrained_decoding,
             constrained_decoding_debug=constrained_decoding_debug,
         )
-        
+
         # Check if LLM returned empty metadata (error case)
         if not metadata:
             return FormatSampleResult(
@@ -1230,14 +1367,14 @@ def format_sample(
                 success=False,
                 error=status or "Empty metadata returned",
             )
-        
+
         # Extract and convert fields
         result_caption = metadata.get('caption', '')
         result_lyrics = metadata.get('lyrics', lyrics)  # Fall back to input lyrics
         keyscale = metadata.get('keyscale', '')
         language = metadata.get('language', metadata.get('vocal_language', ''))
         timesignature = metadata.get('timesignature', '')
-        
+
         # Convert BPM to int
         bpm = None
         bpm_value = metadata.get('bpm')
@@ -1246,7 +1383,7 @@ def format_sample(
                 bpm = int(bpm_value)
             except (ValueError, TypeError):
                 pass
-        
+
         # Convert duration to float
         duration = None
         duration_value = metadata.get('duration')
@@ -1255,7 +1392,7 @@ def format_sample(
                 duration = float(duration_value)
             except (ValueError, TypeError):
                 pass
-        
+
         # Clean up N/A values
         if keyscale == 'N/A':
             keyscale = ''
@@ -1263,7 +1400,7 @@ def format_sample(
             language = ''
         if timesignature == 'N/A':
             timesignature = ''
-        
+
         return FormatSampleResult(
             caption=result_caption,
             lyrics=result_lyrics,
@@ -1276,7 +1413,7 @@ def format_sample(
             success=True,
             error=None,
         )
-        
+
     except Exception as e:
         logger.exception("Format sample failed")
         return FormatSampleResult(
@@ -1284,3 +1421,6 @@ def format_sample(
             success=False,
             error=str(e),
         )
+    finally:
+        if lm_moved_to_accelerator:
+            _lm_gpu_context_exit(llm_handler)
