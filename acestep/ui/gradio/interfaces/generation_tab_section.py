@@ -56,6 +56,7 @@ def create_generation_tab_section(
     max_duration = defaults["max_duration"]
     max_batch_size = defaults["max_batch_size"]
     default_batch_size = defaults["default_batch_size"]
+    lm_codes_strength_default = defaults["lm_codes_strength_default"]
 
     is_pure_base_model = resolve_is_pure_base_model(
         dit_handler=dit_handler,
@@ -69,7 +70,9 @@ def create_generation_tab_section(
         hidden_state_controls = build_hidden_generation_state()
         simple_mode_controls = build_simple_mode_controls()
         source_track_code_controls = build_source_track_and_code_controls()
-        cover_controls = build_cover_strength_controls()
+        cover_controls = build_cover_strength_controls(
+            lm_codes_strength_default=lm_codes_strength_default,
+        )
         custom_mode_controls = build_custom_mode_controls()
         repainting_controls = build_repainting_controls()
         optional_controls = build_optional_parameter_controls(

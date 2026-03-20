@@ -60,11 +60,15 @@ def build_lora_controls() -> dict[str, Any]:
     }
 
 
-def build_lm_controls(service_mode: bool) -> dict[str, Any]:
+def build_lm_controls(
+    service_mode: bool,
+    lm_negative_prompt_default: str,
+) -> dict[str, Any]:
     """Create language-model generation controls for advanced settings.
 
     Args:
         service_mode: Whether the UI is running in service mode (disables some controls).
+        lm_negative_prompt_default: Startup default for LM negative prompt input.
 
     Returns:
         A component map containing LM sampling, CoT, negative prompt, and batch controls.
@@ -116,7 +120,7 @@ def build_lm_controls(service_mode: bool) -> dict[str, Any]:
         with gr.Row():
             lm_negative_prompt = gr.Textbox(
                 label=t("generation.lm_negative_prompt_label"),
-                value="NO USER INPUT",
+                value=lm_negative_prompt_default,
                 placeholder=t("generation.lm_negative_prompt_placeholder"),
                 info=t("generation.lm_negative_prompt_info"),
                 elem_classes=["has-info-container"],

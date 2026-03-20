@@ -45,6 +45,7 @@ def create_advanced_settings_section(
     defaults = compute_init_defaults(init_params, language)
     service_pre_initialized = defaults["service_pre_initialized"]
     service_mode = defaults["service_mode"]
+    lm_negative_prompt_default = defaults["lm_negative_prompt_default"]
 
     if service_pre_initialized and init_params and "dit_handler" in init_params:
         config_path = init_params.get("config_path", "")
@@ -70,7 +71,10 @@ def create_advanced_settings_section(
         )
         lora_components = build_lora_controls()
         dit_components = build_dit_controls(ui_config)
-        lm_components = build_lm_controls(service_mode=service_mode)
+        lm_components = build_lm_controls(
+            service_mode=service_mode,
+            lm_negative_prompt_default=lm_negative_prompt_default,
+        )
         output_components = build_output_controls(
             service_pre_initialized=service_pre_initialized,
             service_mode=service_mode,

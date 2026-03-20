@@ -1,5 +1,6 @@
 """Shared defaults/helpers for generation interface builders."""
 
+import os
 import sys
 from typing import Any
 
@@ -74,6 +75,18 @@ def compute_init_defaults(
     if recommended_backend not in available_backends:
         recommended_backend = available_backends[0]
 
+    lm_negative_prompt_default = os.environ.get(
+        "ACESTEP_LM_NEGATIVE_PROMPT",
+        "NO USER INPUT",
+    ).strip() or "NO USER INPUT"
+
+    lm_codes_strength_raw = os.environ.get("ACESTEP_LM_CODES_STRENGTH", "1.0").strip()
+    try:
+        lm_codes_strength_default = float(lm_codes_strength_raw)
+    except ValueError:
+        lm_codes_strength_default = 1.0
+    lm_codes_strength_default = max(0.0, min(1.0, lm_codes_strength_default))
+
     return {
         "service_pre_initialized": service_pre_initialized,
         "service_mode": service_mode,
@@ -91,6 +104,8 @@ def compute_init_defaults(
         "available_backends": available_backends,
         "recommended_backend": recommended_backend,
         "recommended_lm": gpu_config.recommended_lm_model,
+        "lm_negative_prompt_default": lm_negative_prompt_default,
+        "lm_codes_strength_default": lm_codes_strength_default,
     }
 
 

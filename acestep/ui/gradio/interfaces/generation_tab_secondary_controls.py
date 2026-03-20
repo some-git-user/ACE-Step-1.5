@@ -8,11 +8,13 @@ from acestep.ui.gradio.help_content import create_help_button
 from acestep.ui.gradio.i18n import t
 
 
-def build_cover_strength_controls() -> dict[str, Any]:
+def build_cover_strength_controls(
+    lm_codes_strength_default: float,
+) -> dict[str, Any]:
     """Create code/remix strength controls used by non-simple generation modes.
 
     Args:
-        None.
+        lm_codes_strength_default: Startup default for LM Codes Strength slider.
 
     Returns:
         A component map containing audio/code strength sliders and remix help group.
@@ -21,7 +23,7 @@ def build_cover_strength_controls() -> dict[str, Any]:
     audio_cover_strength = gr.Slider(
         minimum=0.0,
         maximum=1.0,
-        value=1.0,
+        value=lm_codes_strength_default,
         step=0.01,
         label=t("generation.codes_strength_label"),
         info=t("generation.codes_strength_info"),
