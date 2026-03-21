@@ -205,9 +205,9 @@ echo "Server will be available at: http://${SERVER_NAME}:${PORT}"
 echo
 
 # ==================== Standard uv Workflow ====================
-# Works on all platforms: x86_64 Linux (cu128), aarch64 Linux/DGX Spark (cu130),
-# macOS (MPS), Windows (cu128). uv resolves the correct PyTorch wheels via
-# platform-specific index mappings in pyproject.toml.
+# On Linux x86_64, a helper script selects the correct PyTorch backend
+# (CUDA or ROCm) before calling uv sync, because uv markers cannot detect
+# GPU vendor directly.
 
 # Check if uv is installed
 if ! command -v uv &>/dev/null; then
@@ -330,14 +330,14 @@ if [[ ! -d "$SCRIPT_DIR/.venv" ]]; then
     echo "[Setup] Virtual environment not found. Setting up environment..."
     echo "This will take a few minutes on first run."
     echo
-    echo "Running: uv sync"
+    echo "Running: scripts/uv_sync_backend.sh --backend cuda"
     echo
 
-    if ! (cd "$SCRIPT_DIR" && uv sync); then
+    if ! (cd "$SCRIPT_DIR" && scripts/uv_sync_backend.sh --backend cuda); then
         echo
         echo "[Retry] Online sync failed, retrying in offline mode..."
         echo
-        if ! (cd "$SCRIPT_DIR" && uv sync --offline); then
+        if ! (cd "$SCRIPT_DIR" && scripts/uv_sync_backend.sh --backend cuda --offline); then
             echo
             echo "========================================"
             echo "[Error] Failed to setup environment"
@@ -347,7 +347,7 @@ if [[ ! -d "$SCRIPT_DIR/.venv" ]]; then
             echo "Please check:"
             echo "  1. Your internet connection (required for first-time setup)"
             echo "  2. Ensure you have enough disk space"
-            echo "  3. Try running: uv sync manually"
+            echo "  3. Try running: scripts/uv_sync_backend.sh --backend cuda"
             exit 1
         fi
     fi

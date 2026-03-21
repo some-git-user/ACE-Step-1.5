@@ -109,7 +109,12 @@ curl -LsSf https://astral.sh/uv/install.sh | sh          # macOS / Linux
 # 2. Clone & install
 git clone https://github.com/ACE-Step/ACE-Step-1.5.git
 cd ACE-Step-1.5
-uv sync
+
+# Linux x86_64: select CUDA vs ROCm explicitly (or let the helper detect it)
+./scripts/uv_sync_backend.sh
+
+# Other platforms
+# uv sync
 
 # 3. Launch Gradio UI (models auto-download on first run)
 uv run acestep
@@ -125,6 +130,8 @@ Open http://localhost:7860 (Gradio) or http://localhost:8001 (API).
 > 📦 **MacOS users:** A [portable package](https://files.acemusic.ai/acemusic/mac/ACE-Step-1.5.zip) with pre-installed dependencies is available. See [Installation Guide](./docs/en/INSTALL.md#-macos-portable-package).
 
 > 📖 **Full installation guide** (AMD/ROCm, Intel GPU, CPU, environment variables, command-line options): [English](./docs/en/INSTALL.md) | [中文](./docs/zh/INSTALL.md) | [日本語](./docs/ja/INSTALL.md)
+
+> **Linux x86_64 note:** `uv sync` cannot detect whether your machine should use the standard NVIDIA/CUDA-oriented Linux torch stack or the AMD ROCm wheel set. Use `./scripts/uv_sync_backend.sh`, `./scripts/uv_sync_backend.sh --backend cuda`, or `./scripts/uv_sync_backend.sh --backend rocm`.
 
 ### 💡 Which Model Should I Choose?
 
