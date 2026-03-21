@@ -52,8 +52,11 @@ powershell -ExecutionPolicy ByPass -c "irm https://astral.sh/uv/install.ps1 | ie
 git clone https://github.com/ACE-Step/ACE-Step-1.5.git
 cd ACE-Step-1.5
 
-# Linux x86_64: select CUDA vs ROCm explicitly (or let the helper detect it)
+# Linux x86_64: install CUDA/ROCm stack + uv-managed Python in one step
 ./scripts/uv_sync_backend.sh
+
+# Optional: pin Python version used by uv-managed environment
+# ./scripts/uv_sync_backend.sh --python-version 3.12
 
 # Other platforms
 # uv sync
@@ -83,7 +86,7 @@ python acestep/api_server.py                     # REST API
 
 > Models are downloaded automatically on first run. Open http://localhost:7860 (Gradio) or http://localhost:8001 (API).
 
-> **Linux x86_64:** `uv` can select package indexes by OS/architecture, but not by GPU vendor. Use `./scripts/uv_sync_backend.sh` for auto-detection. It runs `uv sync` for the common environment, then switches the torch stack to ROCm when needed. You can also force a backend with `./scripts/uv_sync_backend.sh --backend cuda` or `./scripts/uv_sync_backend.sh --backend rocm`.
+> **Linux x86_64:** `uv` can select package indexes by OS/architecture, but not by GPU vendor. Use `./scripts/uv_sync_backend.sh` for auto-detection. It creates a uv-managed environment and installs backend-specific torch wheels directly. You can force a backend with `./scripts/uv_sync_backend.sh --backend cuda` or `./scripts/uv_sync_backend.sh --backend rocm`.
 
 ---
 

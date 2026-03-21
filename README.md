@@ -110,8 +110,11 @@ curl -LsSf https://astral.sh/uv/install.sh | sh          # macOS / Linux
 git clone https://github.com/ACE-Step/ACE-Step-1.5.git
 cd ACE-Step-1.5
 
-# Linux x86_64: select CUDA vs ROCm explicitly (or let the helper detect it)
+# Linux x86_64: install CUDA/ROCm stack + uv-managed Python in one step
 ./scripts/uv_sync_backend.sh
+
+# Optional: pin Python version used by uv-managed environment
+# ./scripts/uv_sync_backend.sh --python-version 3.12
 
 # Other platforms
 # uv sync
@@ -131,7 +134,7 @@ Open http://localhost:7860 (Gradio) or http://localhost:8001 (API).
 
 > 📖 **Full installation guide** (AMD/ROCm, Intel GPU, CPU, environment variables, command-line options): [English](./docs/en/INSTALL.md) | [中文](./docs/zh/INSTALL.md) | [日本語](./docs/ja/INSTALL.md)
 
-> **Linux x86_64 note:** `uv sync` cannot detect whether your machine should use the standard NVIDIA/CUDA-oriented Linux torch stack or the AMD ROCm wheel set. Use `./scripts/uv_sync_backend.sh`, `./scripts/uv_sync_backend.sh --backend cuda`, or `./scripts/uv_sync_backend.sh --backend rocm`.
+> **Linux x86_64 note:** `uv sync` cannot detect GPU vendor. Use `./scripts/uv_sync_backend.sh` (auto), `./scripts/uv_sync_backend.sh --backend cuda`, or `./scripts/uv_sync_backend.sh --backend rocm`. The script creates a uv-managed venv and installs the matching torch stack directly.
 
 ### 💡 Which Model Should I Choose?
 

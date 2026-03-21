@@ -7,45 +7,82 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 usage() {
     cat <<'EOF'
-Usage: scripts/uv_sync_backend.sh [--backend auto|cuda|rocm] [--print-backend] [uv sync args...]
+Usage: scripts/uv_sync_backend.sh [options]
 
-Select the correct Linux x86_64 PyTorch backend before running uv sync.
+Create a uv-managed environment with the correct Python and PyTorch backend stack.
+
+Options:
+  --backend auto|cuda|rocm      GPU backend to install (default: auto)
+  --python-version X.Y          Python version for uv-managed interpreter (default: 3.11)
+  --venv-dir PATH               Virtual environment path (default: .venv)
+  --offline                     Use offline mode for uv commands
+  --print-backend               Print detected backend and exit
+  -h, --help                    Show help
 
 Examples:
   scripts/uv_sync_backend.sh
   scripts/uv_sync_backend.sh --backend cuda
-  ACESTEP_TORCH_BACKEND=rocm scripts/uv_sync_backend.sh --offline
+  scripts/uv_sync_backend.sh --backend rocm --python-version 3.12
+  ACESTEP_TORCH_BACKEND=rocm ACESTEP_PYTHON_VERSION=3.12 scripts/uv_sync_backend.sh --offline
   scripts/uv_sync_backend.sh --print-backend
 EOF
 }
 
-run_sync() {
-    cd "$REPO_ROOT"
-    uv sync "${sync_args[@]}"
+ensure_uv_available() {
+    if command -v uv >/dev/null 2>&1; then
+        return 0
+    fi
+    if [[ -x "$HOME/.local/bin/uv" ]]; then
+        export PATH="$HOME/.local/bin:$PATH"
+    elif [[ -x "$HOME/.cargo/bin/uv" ]]; then
+        export PATH="$HOME/.cargo/bin:$PATH"
+    fi
+    if ! command -v uv >/dev/null 2>&1; then
+        echo "[Error] uv package manager not found in PATH." >&2
+        echo "[Hint] Install uv: https://docs.astral.sh/uv/getting-started/installation/" >&2
+        return 1
+    fi
 }
 
-install_rocm_packages() {
-    local python_bin="$REPO_ROOT/.venv/bin/python"
-    local -a pip_args=()
+install_cuda_stack() {
+    local python_bin="$1"
 
     if [[ ! -x "$python_bin" ]]; then
         echo "[Error] Expected uv environment at $python_bin after sync." >&2
         return 1
     fi
 
-    for arg in "${sync_args[@]}"; do
-        if [[ "$arg" == "--offline" ]]; then
-            pip_args+=("--offline")
-        fi
-    done
+    echo "[Setup] Installing CUDA 12.8 torch stack"
+    uv pip install --python "$python_bin" "${uv_args[@]}" --index-url https://download.pytorch.org/whl/cu128 \
+        torch==2.10.0+cu128 \
+        torchvision==0.25.0+cu128 \
+        torchaudio==2.10.0+cu128
+
+    echo "[Setup] Installing CUDA dependencies from requirements.txt"
+    uv pip install --python "$python_bin" "${uv_args[@]}" -r "$REPO_ROOT/requirements.txt"
+}
+
+install_rocm_packages() {
+    local python_bin="$1"
+
+    if [[ ! -x "$python_bin" ]]; then
+        echo "[Error] Expected uv environment at $python_bin after setup." >&2
+        return 1
+    fi
 
     echo "[Setup] Reinstalling Linux x86_64 torch stack for ROCm 6.3"
-    uv pip install --python "$python_bin" --force-reinstall "${pip_args[@]}" \
-        --index-url https://download.pytorch.org/whl/rocm6.3 \
+    uv pip install --python "$python_bin" "${uv_args[@]}" --index-url https://download.pytorch.org/whl/rocm6.3 \
         torch==2.9.1+rocm6.3 \
         torchvision==0.24.1+rocm6.3 \
         torchaudio==2.9.1+rocm6.3 \
         pytorch-triton-rocm==3.5.1
+
+    echo "[Setup] Installing ROCm dependencies from requirements-rocm-linux.txt"
+    uv pip install --python "$python_bin" "${uv_args[@]}" -r "$REPO_ROOT/requirements-rocm-linux.txt"
+
+    # requirements-rocm-linux.txt intentionally tracks ROCm essentials and may
+    # lag a few project-level utility dependencies.
+    uv pip install --python "$python_bin" "${uv_args[@]}" "diskcache" "typer-slim>=0.21.1" "lycoris-lora"
 }
 
 has_visible_nvidia_gpu() {
@@ -95,8 +132,10 @@ detect_backend() {
 }
 
 selected_backend="${ACESTEP_TORCH_BACKEND:-auto}"
+python_version="${ACESTEP_PYTHON_VERSION:-3.11}"
+venv_dir=".venv"
 print_backend_only=0
-declare -a sync_args=()
+declare -a uv_args=()
 
 while [[ $# -gt 0 ]]; do
     case "$1" in
@@ -109,6 +148,28 @@ while [[ $# -gt 0 ]]; do
             selected_backend="$2"
             shift 2
             ;;
+        --python-version)
+            if [[ $# -lt 2 ]]; then
+                echo "[Error] --python-version requires a value" >&2
+                usage >&2
+                exit 1
+            fi
+            python_version="$2"
+            shift 2
+            ;;
+        --venv-dir)
+            if [[ $# -lt 2 ]]; then
+                echo "[Error] --venv-dir requires a value" >&2
+                usage >&2
+                exit 1
+            fi
+            venv_dir="$2"
+            shift 2
+            ;;
+        --offline)
+            uv_args+=("--offline")
+            shift
+            ;;
         --print-backend)
             print_backend_only=1
             shift
@@ -118,8 +179,9 @@ while [[ $# -gt 0 ]]; do
             exit 0
             ;;
         *)
-            sync_args+=("$1")
-            shift
+            echo "[Error] Unknown option: $1" >&2
+            usage >&2
+            exit 1
             ;;
     esac
 done
@@ -133,16 +195,31 @@ case "$selected_backend" in
         ;;
 esac
 
+if [[ ! "$python_version" =~ ^3\.[0-9]+$ ]]; then
+    echo "[Error] Unsupported Python version format: $python_version" >&2
+    echo "[Hint] Use a major.minor value like 3.11 or 3.12." >&2
+    exit 1
+fi
+
+ensure_uv_available
+
 if [[ "$(uname -s)" != "Linux" || "$(uname -m)" != "x86_64" ]]; then
-    if [[ "$selected_backend" != "auto" ]]; then
-        echo "[Error] --backend is only supported on Linux x86_64." >&2
+    if [[ "$selected_backend" != "auto" && "$selected_backend" != "cuda" ]]; then
+        echo "[Error] --backend rocm is only supported on Linux x86_64." >&2
         exit 1
     fi
     if [[ "$print_backend_only" -eq 1 ]]; then
         printf 'native\n'
         exit 0
     fi
-    run_sync
+
+    cd "$REPO_ROOT"
+    echo "[Setup] Creating uv venv at $venv_dir with Python $python_version"
+    uv python install "$python_version" "${uv_args[@]}"
+    uv venv "$venv_dir" --python "$python_version" "${uv_args[@]}"
+    uv sync "${uv_args[@]}"
+
+    echo "[Setup] Environment ready: $venv_dir"
     exit 0
 fi
 
@@ -154,8 +231,35 @@ if [[ "$print_backend_only" -eq 1 ]]; then
 fi
 
 echo "[Setup] Linux x86_64 torch backend: $resolved_backend"
-run_sync
+cd "$REPO_ROOT"
+
+echo "[Setup] Ensuring Python $python_version is available via uv"
+uv python install "$python_version" "${uv_args[@]}"
+
+echo "[Setup] Creating venv at $venv_dir"
+uv venv "$venv_dir" --python "$python_version" "${uv_args[@]}"
+
+python_bin="$REPO_ROOT/$venv_dir/bin/python"
 
 if [[ "$resolved_backend" == "rocm" ]]; then
-    install_rocm_packages
+    install_rocm_packages "$python_bin"
+else
+    install_cuda_stack "$python_bin"
 fi
+
+echo "[Setup] Installing ACE-Step package into selected environment"
+uv pip install --python "$python_bin" "${uv_args[@]}" --editable "$REPO_ROOT" --no-deps
+
+echo "[Setup] Verifying torch backend"
+if [[ "$resolved_backend" == "rocm" ]]; then
+    uv run --python "$python_bin" --no-sync python -c "import torch; assert torch.version.hip is not None, 'Expected ROCm torch build'; print({'torch': torch.__version__, 'hip': torch.version.hip})"
+else
+    uv run --python "$python_bin" --no-sync python -c "import torch; assert torch.version.cuda is not None, 'Expected CUDA torch build'; print({'torch': torch.__version__, 'cuda': torch.version.cuda})"
+fi
+
+if [[ "$venv_dir" == ".venv" ]]; then
+    echo "[Setup] Done. You can run: uv run acestep"
+else
+    echo "[Setup] Done. Use this interpreter for ACE-Step: $python_bin"
+fi
+
