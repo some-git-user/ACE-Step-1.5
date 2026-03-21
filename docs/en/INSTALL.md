@@ -25,12 +25,12 @@
 
 ## Requirements
 
-| Item | Requirement |
-|------|-------------|
+| Item   | Requirement                                                                                   |
+| ------ | --------------------------------------------------------------------------------------------- |
 | Python | 3.11-3.12 (stable release, not pre-release)<br>**Note:** ROCm on Windows requires Python 3.12 |
-| GPU | CUDA GPU recommended; MPS / ROCm / Intel XPU / CPU also supported |
-| VRAM | ≥4GB for DiT-only mode; ≥6GB for LLM+DiT |
-| Disk | ~10GB for core models |
+| GPU    | CUDA GPU recommended; MPS / ROCm / Intel XPU / CPU also supported                             |
+| VRAM   | ≥4GB for DiT-only mode; ≥6GB for LLM+DiT                                                      |
+| Disk   | ~10GB for core models                                                                         |
 
 ---
 
@@ -93,16 +93,16 @@ Ready-to-use launch scripts for all platforms. These scripts handle environment 
 
 ### Available Scripts
 
-| Platform | Script | Description |
-|----------|--------|-------------|
-| **Windows** | `start_gradio_ui.bat` | Launch Gradio Web UI (CUDA) |
-| **Windows** | `start_api_server.bat` | Launch REST API Server (CUDA) |
-| **Windows** | `start_gradio_ui_rocm.bat` | Launch Gradio Web UI (AMD ROCm) |
+| Platform    | Script                      | Description                       |
+| ----------- | --------------------------- | --------------------------------- |
+| **Windows** | `start_gradio_ui.bat`       | Launch Gradio Web UI (CUDA)       |
+| **Windows** | `start_api_server.bat`      | Launch REST API Server (CUDA)     |
+| **Windows** | `start_gradio_ui_rocm.bat`  | Launch Gradio Web UI (AMD ROCm)   |
 | **Windows** | `start_api_server_rocm.bat` | Launch REST API Server (AMD ROCm) |
-| **Linux** | `start_gradio_ui.sh` | Launch Gradio Web UI (CUDA) |
-| **Linux** | `start_api_server.sh` | Launch REST API Server (CUDA) |
-| **macOS** | `start_gradio_ui_macos.sh` | Launch Gradio Web UI (MLX) |
-| **macOS** | `start_api_server_macos.sh` | Launch REST API Server (MLX) |
+| **Linux**   | `start_gradio_ui.sh`        | Launch Gradio Web UI (CUDA)       |
+| **Linux**   | `start_api_server.sh`       | Launch REST API Server (CUDA)     |
+| **macOS**   | `start_gradio_ui_macos.sh`  | Launch Gradio Web UI (MLX)        |
+| **macOS**   | `start_api_server_macos.sh` | Launch REST API Server (MLX)      |
 
 ### Windows
 
@@ -175,11 +175,14 @@ All configurable options are defined as variables at the top of each script. To 
 <tr><td>
 
 Find these lines in `start_gradio_ui.bat`:
+
 ```batch
 set LANGUAGE=en
 set LM_MODEL_PATH=--lm_model_path acestep-5Hz-lm-0.6B
 ```
+
 Change to:
+
 ```batch
 set LANGUAGE=zh
 set LM_MODEL_PATH=--lm_model_path acestep-5Hz-lm-1.7B
@@ -188,11 +191,14 @@ set LM_MODEL_PATH=--lm_model_path acestep-5Hz-lm-1.7B
 </td><td>
 
 Find these lines in `start_gradio_ui.sh`:
+
 ```bash
 LANGUAGE="en"
 LM_MODEL_PATH="--lm_model_path acestep-5Hz-lm-0.6B"
 ```
+
 Change to:
+
 ```bash
 LANGUAGE="zh"
 LM_MODEL_PATH="--lm_model_path acestep-5Hz-lm-1.7B"
@@ -229,10 +235,13 @@ CHECK_UPDATE="false"
 <tr><td>
 
 Before:
+
 ```batch
 REM set SHARE=--share
 ```
+
 After:
+
 ```batch
 set SHARE=--share
 ```
@@ -240,10 +249,13 @@ set SHARE=--share
 </td><td>
 
 Before:
+
 ```bash
 # SHARE="--share"
 ```
+
 After:
+
 ```bash
 SHARE="--share"
 ```
@@ -253,27 +265,27 @@ SHARE="--share"
 
 **Common configurable options:**
 
-| Option | Gradio UI | API Server | Description |
-|--------|:---------:|:----------:|-------------|
-| `LANGUAGE` | ✅ | — | UI language: `en`, `zh`, `he`, `ja` |
-| `PORT` | ✅ | ✅ | Server port (default: 7860 / 8001) |
-| `SERVER_NAME` / `HOST` | ✅ | ✅ | Bind address (`127.0.0.1` or `0.0.0.0`) |
-| `CHECK_UPDATE` | ✅ | ✅ | Startup update check (`true` / `false`) |
-| `CONFIG_PATH` | ✅ | — | DiT model (`acestep-v15-turbo`, etc.) |
-| `LM_MODEL_PATH` | ✅ | ✅ | LM model (`acestep-5Hz-lm-0.6B` / `1.7B` / `4B`) |
-| `DOWNLOAD_SOURCE` | ✅ | ✅ | Download source (`huggingface` / `modelscope`) |
-| `SHARE` | ✅ | — | Create public Gradio link |
-| `INIT_LLM` | ✅ | — | Force LLM on/off (`true` / `false` / `auto`) |
-| `OFFLOAD_TO_CPU` | ✅ | — | CPU offload for low-VRAM GPUs |
+| Option                 | Gradio UI | API Server | Description                                      |
+| ---------------------- | :-------: | :--------: | ------------------------------------------------ |
+| `LANGUAGE`             |    ✅     |     —      | UI language: `en`, `zh`, `he`, `ja`              |
+| `PORT`                 |    ✅     |     ✅     | Server port (default: 7860 / 8001)               |
+| `SERVER_NAME` / `HOST` |    ✅     |     ✅     | Bind address (`127.0.0.1` or `0.0.0.0`)          |
+| `CHECK_UPDATE`         |    ✅     |     ✅     | Startup update check (`true` / `false`)          |
+| `CONFIG_PATH`          |    ✅     |     —      | DiT model (`acestep-v15-turbo`, etc.)            |
+| `LM_MODEL_PATH`        |    ✅     |     ✅     | LM model (`acestep-5Hz-lm-0.6B` / `1.7B` / `4B`) |
+| `DOWNLOAD_SOURCE`      |    ✅     |     ✅     | Download source (`huggingface` / `modelscope`)   |
+| `SHARE`                |    ✅     |     —      | Create public Gradio link                        |
+| `INIT_LLM`             |    ✅     |     —      | Force LLM on/off (`true` / `false` / `auto`)     |
+| `OFFLOAD_TO_CPU`       |    ✅     |     —      | CPU offload for low-VRAM GPUs                    |
 
 ### Update & Maintenance Tools
 
-| Script (Windows) | Script (Linux/macOS) | Purpose |
-|-------------------|----------------------|---------|
-| `check_update.bat` | `check_update.sh` | Check and update from GitHub |
-| `merge_config.bat` | `merge_config.sh` | Merge backed-up configurations after update |
-| `install_uv.bat` | `install_uv.sh` | Install uv package manager |
-| `quick_test.bat` | `quick_test.sh` | Test environment setup |
+| Script (Windows)   | Script (Linux/macOS) | Purpose                                     |
+| ------------------ | -------------------- | ------------------------------------------- |
+| `check_update.bat` | `check_update.sh`    | Check and update from GitHub                |
+| `merge_config.bat` | `merge_config.sh`    | Merge backed-up configurations after update |
+| `install_uv.bat`   | `install_uv.sh`      | Install uv package manager                  |
+| `quick_test.bat`   | `quick_test.sh`      | Test environment setup                      |
 
 **Update workflow:**
 
@@ -295,9 +307,9 @@ For Windows users, we provide a portable package with pre-installed dependencies
 
 ### Quick Start Scripts
 
-| Script | Description |
-|--------|-------------|
-| `start_gradio_ui.bat` | Launch Gradio Web UI |
+| Script                 | Description            |
+| ---------------------- | ---------------------- |
+| `start_gradio_ui.bat`  | Launch Gradio Web UI   |
 | `start_api_server.bat` | Launch REST API Server |
 
 Both scripts support auto environment detection, auto `uv` install, configurable download source, optional Git update check, and customizable models/parameters.
@@ -331,13 +343,13 @@ REM set ACESTEP_INIT_LLM=false  # Force disable LLM (DiT-only mode)
 
 ### Update & Maintenance
 
-| Script | Purpose |
-|--------|---------|
-| `check_update.bat` | Check and update from GitHub |
-| `merge_config.bat` | Merge backed-up configurations after update |
-| `install_uv.bat` | Install uv package manager |
-| `quick_test.bat` | Test environment setup |
-| `test_git_update.bat` | Test Git update functionality |
+| Script                | Purpose                                     |
+| --------------------- | ------------------------------------------- |
+| `check_update.bat`    | Check and update from GitHub                |
+| `merge_config.bat`    | Merge backed-up configurations after update |
+| `install_uv.bat`      | Install uv package manager                  |
+| `quick_test.bat`      | Test environment setup                      |
+| `test_git_update.bat` | Test Git update functionality               |
 
 **Update workflow:**
 
@@ -374,9 +386,9 @@ For macOS users (Apple Silicon), we provide a portable package with pre-installe
 
 ### Quick Start Scripts
 
-| Script | Description |
-|--------|-------------|
-| `start_gradio_ui_macos.sh` | Launch Gradio Web UI (MLX) |
+| Script                      | Description                  |
+| --------------------------- | ---------------------------- |
+| `start_gradio_ui_macos.sh`  | Launch Gradio Web UI (MLX)   |
 | `start_api_server_macos.sh` | Launch REST API Server (MLX) |
 
 ```bash
@@ -469,11 +481,11 @@ If you see "No GPU detected, running on CPU" with an AMD GPU:
 1. Run the diagnostic tool: `python scripts/check_gpu.py`
 2. For RDNA3 GPUs, set `HSA_OVERRIDE_GFX_VERSION`:
 
-| GPU | Value |
-|-----|-------|
+| GPU                        | Value                                    |
+| -------------------------- | ---------------------------------------- |
 | RX 7900 XT/XTX, RX 9070 XT | `export HSA_OVERRIDE_GFX_VERSION=11.0.0` |
-| RX 7800 XT, RX 7700 XT | `export HSA_OVERRIDE_GFX_VERSION=11.0.1` |
-| RX 7600 | `export HSA_OVERRIDE_GFX_VERSION=11.0.2` |
+| RX 7800 XT, RX 7700 XT     | `export HSA_OVERRIDE_GFX_VERSION=11.0.1` |
+| RX 7600                    | `export HSA_OVERRIDE_GFX_VERSION=11.0.2` |
 
 3. On Windows, use `start_gradio_ui_rocm.bat` / `start_api_server_rocm.bat` which set required environment variables automatically.
 4. Verify ROCm installation: `rocm-smi` should list your GPU.
@@ -486,17 +498,17 @@ See [ACE-Step1.5-Rocm-Manual-Linux.md](ACE-Step1.5-Rocm-Manual-Linux.md) for a d
 
 ## Intel GPUs
 
-| Item | Detail |
-|------|--------|
-| Tested Device | Windows laptop with Ultra 9 285H integrated graphics |
-| Offload | Disabled by default |
-| Compile & Quantization | Enabled by default |
-| LLM Inference | Supported (tested with `acestep-5Hz-lm-0.6B`) |
-| vllm engine acceleration | NOT supported on Intel GPUs |
-| Test Environment | PyTorch 2.8.0 from [Intel Extension for PyTorch](https://pytorch-extension.intel.com/?request=platform) |
+| Item                     | Detail                                                                                                  |
+| ------------------------ | ------------------------------------------------------------------------------------------------------- |
+| Tested Device            | Windows laptop with Ultra 9 285H integrated graphics                                                    |
+| Offload                  | Disabled by default                                                                                     |
+| Compile & Quantization   | Enabled by default                                                                                      |
+| LLM Inference            | Supported (tested with `acestep-5Hz-lm-0.6B`)                                                           |
+| vllm engine acceleration | NOT supported on Intel GPUs                                                                             |
+| Test Environment         | PyTorch 2.8.0 from [Intel Extension for PyTorch](https://pytorch-extension.intel.com/?request=platform) |
 
 > **Note:** LLM inference speed may decrease when generating audio longer than 2 minutes. Intel discrete GPUs are expected to work but not yet tested.
-> 
+>
 > **Audio I/O:** `torchcodec` is not available for Intel XPU GPUs. ACE-Step automatically uses `soundfile` as a fallback for audio I/O, which provides full functionality on Intel platforms.
 
 ---
@@ -509,6 +521,7 @@ ACE-Step can run on CPU for **inference only**, but performance will be signific
 - For low-VRAM systems, DiT-only mode (LLM disabled) is supported.
 
 If you do not have a GPU, consider:
+
 - Using cloud GPU providers
 - Running inference-only workflows
 - Using DiT-only mode with `ACESTEP_INIT_LLM=false`
@@ -534,6 +547,7 @@ uv run acestep --backend pt
 ## Environment Variables (.env)
 
 The `.env` file provides a centralized way to configure ACE-Step. Settings in `.env` are:
+
 - Used by Python scripts (CLI, API server, Gradio UI)
 - **Now also used by launcher scripts** (`start_gradio_ui.bat`, `start_gradio_ui.sh`, etc.)
 - **Preserved across repository updates** (unlike hardcoded values in launcher scripts)
@@ -544,32 +558,32 @@ cp .env.example .env   # Copy and edit
 
 ### Benefits of Using .env
 
-✅ **Survives Updates**: Your custom model paths and settings won't be overwritten when you update ACE-Step  
-✅ **Cross-Platform**: Same configuration works on Windows, Linux, and macOS  
+✅ **Survives Updates**: Your custom model paths and settings won't be overwritten when you update ACE-Step
+✅ **Cross-Platform**: Same configuration works on Windows, Linux, and macOS
 ✅ **Version Control Safe**: `.env` is in `.gitignore`, so your personal settings stay private
 
 ### Key Variables
 
-| Variable | Values | Description |
-|----------|--------|-------------|
-| `ACESTEP_INIT_LLM` | `auto` / `true` / `false` | LLM initialization mode |
-| `ACESTEP_CONFIG_PATH` | model name | DiT model path |
-| `ACESTEP_LM_MODEL_PATH` | model name | LM model path |
-| `ACESTEP_DOWNLOAD_SOURCE` | `auto` / `huggingface` / `modelscope` | Download source |
-| `ACESTEP_API_KEY` | string | API authentication key |
-| `PORT` | number | Server port (default: 7860) |
-| `SERVER_NAME` | IP address | Server host (default: 127.0.0.1) |
-| `LANGUAGE` | `en` / `zh` / `he` / `ja` | UI language (default: en) |
+| Variable                  | Values                                | Description                      |
+| ------------------------- | ------------------------------------- | -------------------------------- |
+| `ACESTEP_INIT_LLM`        | `auto` / `true` / `false`             | LLM initialization mode          |
+| `ACESTEP_CONFIG_PATH`     | model name                            | DiT model path                   |
+| `ACESTEP_LM_MODEL_PATH`   | model name                            | LM model path                    |
+| `ACESTEP_DOWNLOAD_SOURCE` | `auto` / `huggingface` / `modelscope` | Download source                  |
+| `ACESTEP_API_KEY`         | string                                | API authentication key           |
+| `PORT`                    | number                                | Server port (default: 7860)      |
+| `SERVER_NAME`             | IP address                            | Server host (default: 127.0.0.1) |
+| `LANGUAGE`                | `en` / `zh` / `he` / `ja`             | UI language (default: en)        |
 
 ### LLM Initialization (`ACESTEP_INIT_LLM`)
 
 Processing flow: `GPU Detection → ACESTEP_INIT_LLM Override → Model Loading`
 
-| Value | Behavior |
-|-------|----------|
-| `auto` (or empty) | Use GPU auto-detection result (recommended) |
+| Value                | Behavior                                             |
+| -------------------- | ---------------------------------------------------- |
+| `auto` (or empty)    | Use GPU auto-detection result (recommended)          |
 | `true` / `1` / `yes` | Force enable LLM after GPU detection (may cause OOM) |
-| `false` / `0` / `no` | Force disable for pure DiT mode |
+| `false` / `0` / `no` | Force disable for pure DiT mode                      |
 
 **Example `.env` for different scenarios:**
 
@@ -591,23 +605,23 @@ ACESTEP_INIT_LLM=false
 
 ### Gradio UI (`acestep`)
 
-| Option | Default | Description |
-|--------|---------|-------------|
-| `--port` | 7860 | Server port |
-| `--server-name` | 127.0.0.1 | Server address (use `0.0.0.0` for network access) |
-| `--share` | false | Create public Gradio link |
-| `--language` | en | UI language: `en`, `zh`, `he`, `ja` |
-| `--batch_size` | None | Default batch size for generation (1 to GPU-dependent max). When not specified, defaults to `min(2, GPU_max)` |
-| `--init_service` | false | Auto-initialize models on startup |
-| `--init_llm` | auto | LLM init: `true` / `false` / omit for auto |
-| `--config_path` | auto | DiT model (e.g., `acestep-v15-turbo`) |
-| `--lm_model_path` | auto | LM model (e.g., `acestep-5Hz-lm-1.7B`) |
-| `--offload_to_cpu` | auto | CPU offload (auto-enabled if VRAM < 20GB) |
-| `--download-source` | auto | Model source: `auto` / `huggingface` / `modelscope` |
-| `--enable-api` | false | Enable REST API alongside Gradio UI |
-| `--api-key` | none | API key for authentication |
-| `--auth-username` | none | Gradio authentication username |
-| `--auth-password` | none | Gradio authentication password |
+| Option              | Default   | Description                                                                                                   |
+| ------------------- | --------- | ------------------------------------------------------------------------------------------------------------- |
+| `--port`            | 7860      | Server port                                                                                                   |
+| `--server-name`     | 127.0.0.1 | Server address (use `0.0.0.0` for network access)                                                             |
+| `--share`           | false     | Create public Gradio link                                                                                     |
+| `--language`        | en        | UI language: `en`, `zh`, `he`, `ja`                                                                           |
+| `--batch_size`      | None      | Default batch size for generation (1 to GPU-dependent max). When not specified, defaults to `min(2, GPU_max)` |
+| `--init_service`    | false     | Auto-initialize models on startup                                                                             |
+| `--init_llm`        | auto      | LLM init: `true` / `false` / omit for auto                                                                    |
+| `--config_path`     | auto      | DiT model (e.g., `acestep-v15-turbo`)                                                                         |
+| `--lm_model_path`   | auto      | LM model (e.g., `acestep-5Hz-lm-1.7B`)                                                                        |
+| `--offload_to_cpu`  | auto      | CPU offload (auto-enabled if VRAM < 20GB)                                                                     |
+| `--download-source` | auto      | Model source: `auto` / `huggingface` / `modelscope`                                                           |
+| `--enable-api`      | false     | Enable REST API alongside Gradio UI                                                                           |
+| `--api-key`         | none      | API key for authentication                                                                                    |
+| `--auth-username`   | none      | Gradio authentication username                                                                                |
+| `--auth-password`   | none      | Gradio authentication password                                                                                |
 
 **Examples:**
 
@@ -664,16 +678,16 @@ huggingface-cli download ACE-Step/acestep-5Hz-lm-4B --local-dir ./checkpoints/ac
 
 ### Available Models
 
-| Model | Description | HuggingFace |
-|-------|-------------|-------------|
-| **Ace-Step1.5** (Main) | Core: vae, Qwen3-Embedding-0.6B, acestep-v15-turbo, acestep-5Hz-lm-1.7B | [Link](https://huggingface.co/ACE-Step/Ace-Step1.5) |
-| acestep-5Hz-lm-0.6B | Lightweight LM (0.6B params) | [Link](https://huggingface.co/ACE-Step/acestep-5Hz-lm-0.6B) |
-| acestep-5Hz-lm-4B | Large LM (4B params) | [Link](https://huggingface.co/ACE-Step/acestep-5Hz-lm-4B) |
-| acestep-v15-base | Base DiT model | [Link](https://huggingface.co/ACE-Step/acestep-v15-base) |
-| acestep-v15-sft | SFT DiT model | [Link](https://huggingface.co/ACE-Step/acestep-v15-sft) |
-| acestep-v15-turbo-shift1 | Turbo DiT with shift1 | [Link](https://huggingface.co/ACE-Step/acestep-v15-turbo-shift1) |
-| acestep-v15-turbo-shift3 | Turbo DiT with shift3 | [Link](https://huggingface.co/ACE-Step/acestep-v15-turbo-shift3) |
-| acestep-v15-turbo-continuous | Turbo DiT with continuous shift (1-5) | [Link](https://huggingface.co/ACE-Step/acestep-v15-turbo-continuous) |
+| Model                        | Description                                                             | HuggingFace                                                          |
+| ---------------------------- | ----------------------------------------------------------------------- | -------------------------------------------------------------------- |
+| **Ace-Step1.5** (Main)       | Core: vae, Qwen3-Embedding-0.6B, acestep-v15-turbo, acestep-5Hz-lm-1.7B | [Link](https://huggingface.co/ACE-Step/Ace-Step1.5)                  |
+| acestep-5Hz-lm-0.6B          | Lightweight LM (0.6B params)                                            | [Link](https://huggingface.co/ACE-Step/acestep-5Hz-lm-0.6B)          |
+| acestep-5Hz-lm-4B            | Large LM (4B params)                                                    | [Link](https://huggingface.co/ACE-Step/acestep-5Hz-lm-4B)            |
+| acestep-v15-base             | Base DiT model                                                          | [Link](https://huggingface.co/ACE-Step/acestep-v15-base)             |
+| acestep-v15-sft              | SFT DiT model                                                           | [Link](https://huggingface.co/ACE-Step/acestep-v15-sft)              |
+| acestep-v15-turbo-shift1     | Turbo DiT with shift1                                                   | [Link](https://huggingface.co/ACE-Step/acestep-v15-turbo-shift1)     |
+| acestep-v15-turbo-shift3     | Turbo DiT with shift3                                                   | [Link](https://huggingface.co/ACE-Step/acestep-v15-turbo-shift3)     |
+| acestep-v15-turbo-continuous | Turbo DiT with continuous shift (1-5)                                   | [Link](https://huggingface.co/ACE-Step/acestep-v15-turbo-continuous) |
 
 ---
 
@@ -681,13 +695,13 @@ huggingface-cli download ACE-Step/acestep-5Hz-lm-4B --local-dir ./checkpoints/ac
 
 ACE-Step automatically adapts to your GPU's VRAM. The UI pre-configures all settings (LM model, backend, offloading, quantization) based on your detected GPU tier:
 
-| Your GPU VRAM | Recommended LM Model | Backend | Notes |
-|---------------|---------------------|---------|-------|
-| **≤6GB** | None (DiT only) | — | LM disabled by default; INT8 quantization + full CPU offload |
-| **6-8GB** | `acestep-5Hz-lm-0.6B` | `pt` | Lightweight LM with PyTorch backend |
-| **8-16GB** | `0.6B` / `1.7B` | `vllm` | 0.6B for 8-12GB, 1.7B for 12-16GB |
-| **16-24GB** | `acestep-5Hz-lm-1.7B` | `vllm` | 4B available on 20GB+; no offload on 20GB+ |
-| **≥24GB** | `acestep-5Hz-lm-4B` | `vllm` | Best quality, all models fit without offload |
+| Your GPU VRAM | Recommended LM Model  | Backend | Notes                                                        |
+| ------------- | --------------------- | ------- | ------------------------------------------------------------ |
+| **≤6GB**      | None (DiT only)       | —       | LM disabled by default; INT8 quantization + full CPU offload |
+| **6-8GB**     | `acestep-5Hz-lm-0.6B` | `pt`    | Lightweight LM with PyTorch backend                          |
+| **8-16GB**    | `0.6B` / `1.7B`       | `vllm`  | 0.6B for 8-12GB, 1.7B for 12-16GB                            |
+| **16-24GB**   | `acestep-5Hz-lm-1.7B` | `vllm`  | 4B available on 20GB+; no offload on 20GB+                   |
+| **≥24GB**     | `acestep-5Hz-lm-4B`   | `vllm`  | Best quality, all models fit without offload                 |
 
 > 📖 For detailed GPU compatibility information (tier table, duration limits, batch sizes, adaptive UI defaults, memory optimization), see [GPU Compatibility Guide](GPU_COMPATIBILITY.md).
 

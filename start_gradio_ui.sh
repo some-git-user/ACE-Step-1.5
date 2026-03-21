@@ -12,20 +12,20 @@ _load_env_file() {
     if [[ ! -f "$env_file" ]]; then
         return 0
     fi
-    
+
     echo "[Config] Loading configuration from .env file..."
-    
+
     # Read .env file and export variables
     while IFS='=' read -r key value || [[ -n "$key" ]]; do
         # Skip empty lines and comments
         [[ -z "$key" || "$key" =~ ^[[:space:]]*# ]] && continue
-        
+
         # Trim whitespace from key and value
         key="${key#"${key%%[![:space:]]*}"}"
         key="${key%"${key##*[![:space:]]}"}"
         value="${value#"${value%%[![:space:]]*}"}"
         value="${value%"${value##*[![:space:]]}"}"
-        
+
         # Map .env variable names to script variables
         case "$key" in
             ACESTEP_CONFIG_PATH)
@@ -61,7 +61,7 @@ _load_env_file() {
                 ;;
         esac
     done < "$env_file"
-    
+
     echo "[Config] Configuration loaded from .env"
 }
 
