@@ -39,7 +39,11 @@ def _resolve_instruction(
     """
 
     instruction_to_use = req.instruction
-    if instruction_to_use == default_dit_instruction and req.task_type in task_instructions:
+    should_resolve = (
+        not instruction_to_use or not instruction_to_use.strip()
+        or instruction_to_use == default_dit_instruction
+    ) and req.task_type in task_instructions
+    if should_resolve:
         raw_instruction = task_instructions[req.task_type]
 
         if req.task_type == "complete":

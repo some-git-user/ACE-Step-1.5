@@ -40,6 +40,7 @@ PARAM_ALIASES: Dict[str, list[str]] = {
     "use_cot_language": ["use_cot_language", "cot_language", "cot-language"],
     "is_format_caption": ["is_format_caption", "isFormatCaption"],
     "allow_lm_batch": ["allow_lm_batch", "allowLmBatch", "parallel_thinking"],
+    "instruction": ["instruction"],
     "track_name": ["track_name", "trackName"],
     "track_classes": ["track_classes", "trackClasses", "instruments"],
 }
